@@ -8,7 +8,7 @@
       "name": "Debug",
       "type": "cppvsdbg",
       "request": "launch",
-      "program": "zig-out/bin/gadgets.exe",
+      "program": "zig-out/bin/${fileBasenameNoExtension}.exe",
       "cwd": "${workspaceRoot}",
       "logging": {
         "exceptions": true,
@@ -19,6 +19,24 @@
         "engineLogging": false,
       },
       "preLaunchTask": "build",
-    }
+      "internalConsoleOptions": "openOnSessionStart",
+    },
+    {
+      "name": "Debug Test",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "zig-out/bin/${fileBasenameNoExtension}.exe",
+      "cwd": "${workspaceRoot}",
+      "logging": {
+        "exceptions": true,
+        "programOutput": true,
+        "processExit": false,
+        "threadExit": false,
+        "moduleLoad": false,
+        "engineLogging": false,
+      },
+      "preLaunchTask": "build test",
+      "internalConsoleOptions": "openOnSessionStart",
+    },
   ]
 }
