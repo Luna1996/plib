@@ -2,13 +2,23 @@
 
 const std = @import("std");
 
-const RuleSet = struct {
+pub const RuleSet = struct {
   allocator: std.mem.Allocator,
   names: std.ArrayList([]u8),
   rules: std.ArrayList(Rule),
+
+  pub fn parse(allocator: std.mem.Allocator, abnf: []const u8) !RuleSet {
+    var rule_set = RuleSet {
+      .allocator = allocator,
+      .names = std.ArrayList([]u8).init(allocator),
+      .rules = std.ArrayList(Rule).init(allocator),
+    };
+    _ = rule_set;
+    _ = abnf;
+  }
 };
 
-const Rule = union(enum) {
+pub const Rule = union(enum) {
   alternative: std.ArrayList(Rule),
   concatenation: std.ArrayList(Rule),
   repetition: struct {
