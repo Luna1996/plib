@@ -14,64 +14,6 @@ pub const Rule = union(enum) {
     max: u8
   },
   jmp: usize,
-
-  pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
-    switch (self) {
-      .alt, .con => |lst| {
-        for (lst) |sub| { sub.deinit(allocator); }
-        allocator.free(lst);
-      },
-      .rep => |rep| {
-        rep.sub.deinit(allocator);
-        allocator.destroy(rep.sub);
-      },
-      .str => |str| {
-        allocator.free(str);
-      },
-      else => {},
-    }
-  }
-
-  pub fn format(
-    self: @This(),
-    comptime fmt: []const u8,
-    options: std.fmt.FormatOptions,
-    writer: anytype,
-  ) !void {
-    try writer.print(".{{.{s}=", .{@tagName(self)});
-    switch (self) {
-      .alt, .con => |arr| {
-        try writer.writeAll("&.{");
-        for (arr) |sub| {
-          try format(sub, fmt, options, writer);
-          try writer.writeAll(",");
-        }
-        try writer.writeAll("}");
-      },
-      .rep => |rep| {
-        try writer.writeAll(".{");
-        if (rep.min != 0) {
-          try writer.print(".min={d},", .{rep.min});
-        }
-        if (rep.max) |max| {
-          try writer.print(".max={d},", .{max});
-        }
-        try writer.writeAll(".sub=&");
-        try format(rep.sub.*, fmt, options, writer);
-        try writer.writeAll("}");
-      },
-      .str => |str| {
-        try std.json.encodeJsonString(str, .{}, writer);
-      },
-      .val => |val| {
-        try writer.print(".{{.min={d},.max={d}}}", .{val.min, val.max});
-      },
-      .jmp => |jmp| {
-        try writer.print("{d}", .{jmp});
-      },
-    }
-    try writer.writeAll("}");
-  }
 };
 
 pub fn Node(comptime Tag: type) type {
@@ -83,6 +25,10 @@ pub fn Node(comptime Tag: type) type {
     pub fn deinit(self: @This()) void {
       for (self.sub.items) |item| { item.deinit(); }
       self.sub.deinit();
+    }
+
+    pub fn get(self: @This(), i: usize) Node(Tag) {
+      return self.sub.items[i];
     }
 
     pub fn format(
@@ -143,7 +89,7 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn([]const u8
       };
       defer node.deinit();
       try parseRule(text, &node, rules[@intFromEnum(root)]);
-      return try Builder.build(node, allocator);
+      return try Builder.build(allocator, node);
     }
 
     fn parseRule(
