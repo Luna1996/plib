@@ -1,14 +1,12 @@
-; https://www.rfc-editor.org/rfc/rfc5234#section-4
-
 rulelist       =  1*( rule / (*c-wsp c-nl) )
 
-rule           =  rulename defined-as elements c-nl
+rule           =  rulename *c-wsp defined-as *c-wsp elements c-nl
                       ; continues if next line starts
                       ;  with white space
 
 rulename       =  ALPHA *(ALPHA / DIGIT / "-")
 
-defined-as     =  *c-wsp ("=" / "=/") *c-wsp
+defined-as     =  "=" / "=/"
                       ; basic rules definition and
                       ;  incremental alternatives
 
@@ -28,7 +26,7 @@ concatenation  =  repetition *(1*c-wsp repetition)
 
 repetition     =  [repeat] element
 
-repeat         =  1*DIGIT / (*DIGIT "*" *DIGIT)
+repeat         =  (*DIGIT "*" *DIGIT) / 1*DIGIT
 
 element        =  rulename / group / option /
                   char-val / num-val / prose-val

@@ -42,11 +42,11 @@ pub const rules = &.{
   // 00 - rulelist
   .{.rep=.{.min=1,.sub=&.{.alt=&.{.{.jmp=1},.{.con=&.{.{.rep=.{.sub=&.{.jmp=5}}},.{.jmp=6}}}}}}},
   // 01 - rule
-  .{.con=&.{.{.jmp=2},.{.jmp=3},.{.jmp=4},.{.jmp=6}}},
+  .{.con=&.{.{.jmp=2},.{.rep=.{.sub=&.{.jmp=5}}},.{.jmp=3},.{.rep=.{.sub=&.{.jmp=5}}},.{.jmp=4},.{.jmp=6}}},
   // 02 - rulename
   .{.con=&.{.{.jmp=21},.{.rep=.{.sub=&.{.alt=&.{.{.jmp=21},.{.jmp=27},.{.str="-"}}}}}}},
   // 03 - defined_as
-  .{.con=&.{.{.rep=.{.sub=&.{.jmp=5}}},.{.alt=&.{.{.str="="},.{.str="=/"}}},.{.rep=.{.sub=&.{.jmp=5}}}}},
+  .{.alt=&.{.{.str="="},.{.str="=/"}}},
   // 04 - elements
   .{.con=&.{.{.jmp=8},.{.rep=.{.sub=&.{.jmp=5}}}}},
   // 05 - c_wsp
@@ -62,7 +62,7 @@ pub const rules = &.{
   // 10 - repetition
   .{.con=&.{.{.rep=.{.max=1,.sub=&.{.jmp=11}}},.{.jmp=12}}},
   // 11 - repeat
-  .{.alt=&.{.{.rep=.{.min=1,.sub=&.{.jmp=27}}},.{.con=&.{.{.rep=.{.sub=&.{.jmp=27}}},.{.str="*"},.{.rep=.{.sub=&.{.jmp=27}}}}}}},
+  .{.alt=&.{.{.con=&.{.{.rep=.{.sub=&.{.jmp=27}}},.{.str="*"},.{.rep=.{.sub=&.{.jmp=27}}}}},.{.rep=.{.min=1,.sub=&.{.jmp=27}}}}},
   // 12 - element
   .{.alt=&.{.{.jmp=2},.{.jmp=13},.{.jmp=14},.{.jmp=15},.{.jmp=16},.{.jmp=20}}},
   // 13 - group
