@@ -3,7 +3,7 @@
 const std = @import("std");
 const stdx = @import("../stdx.zig");
 const ast = @import("ast.zig");
-const Syntax = @import("abnf.gen.old.zig");
+const Syntax = @import("gen/abnf.zig");
 
 const Tag = Syntax.Tag;
 
@@ -210,7 +210,7 @@ fn buildRule(
       rule.* = .{.rep = .{.max = 1, .sub = next}};
     },
     .char_val => {
-      rule.* = .{.str = try allocator.dupe(u8, node.raw[1..node.raw.len - 1])};
+      rule.* = .{.str = try allocator.dupe(u8, node.raw)};
     },
     .bin_val, .dec_val, .hex_val => {
       const base: u8 = switch (node.tag) {
@@ -219,27 +219,23 @@ fn buildRule(
         .hex_val => 16,
         else => unreachable,
       };
-      const text = node.raw[1..];
-      if (std.mem.indexOfScalar(u8, text, '-')) |hyphen| {
+      if (std.mem.indexOfScalar(u8, node.raw, '-')) |hyphen| {
         rule.* = .{.val = .{
-          .min = try std.fmt.parseUnsigned(u8, text[0..hyphen], base),
-          .max = try std.fmt.parseUnsigned(u8, text[hyphen + 1..], base),
+          .min = try std.fmt.parseUnsigned(u8, node.raw[0..hyphen], base),
+          .max = try std.fmt.parseUnsigned(u8, node.raw[hyphen + 1..], base),
         }};
       } else {
         var buffer = std.ArrayList(u8).init(allocator);
         defer buffer.deinit();
-        var iter = std.mem.tokenizeScalar(u8, text, '.');
+        var iter = std.mem.tokenizeScalar(u8, node.raw, '.');
         while (iter.next()) |token| {
           try buffer.append(try std.fmt.parseUnsigned(u8, token, base));
         }
         rule.* = .{.str = try buffer.toOwnedSlice()};
       }
     },
-    .rulename => {
+    .rulename, .prose_val => {
       rule.* = .{.jmp = name_map.get(node.raw).?};
-    },
-    .prose_val => {
-      rule.* = .{.jmp = name_map.get(node.raw[1..node.raw.len-1]).?};
     },
     else => unreachable,
   }
@@ -248,22 +244,16 @@ fn buildRule(
 pub const Builder = struct {
   pub const root: Tag = .rulelist;
   pub const ignore: []const Tag = &.{
-    .elements, .group, .element, .num_val,
-    .c_wsp, .c_nl, .comment,
-    .ALPHA, .BIT, .CHAR, .CR,
-    .CRLF, .CTL, .DIGIT, .DQUOTE,
-    .HEXDIG, .HTAB, .LF, .LWSP,
-    .OCTET, .SP, .VCHAR, .WSP
+    .comment,
+    .empty_line, .empty,
+    .alpha, .wsp, .crlf,
+    .bit, .dec, .hex,
   };
 
   pub fn build(
     allocator: std.mem.Allocator,
     node: Node(Tag),
   ) !RuleSet {
-    const file = try std.fs.cwd().createFile("output.txt", .{});
-    defer file.close();
-    try file.writer().print("{}", .{node});
-
     var rule_set = try RuleSet.init(allocator);
     
     var name_map = std.StringHashMap(usize).init(allocator);
@@ -300,10 +290,44 @@ pub const Builder = struct {
 pub const parser = ast.createParser(Syntax, Builder);
 
 test {
+  std.debug.print("\n", .{});
   const allocator = std.testing.allocator;
-  const rule_set = try parser(@embedFile("abnf.abnf"), allocator);
+  const rule_set = try parser(@embedFile("abnf/abnf.abnf"), allocator);
   defer rule_set.deinit(allocator);
-  const file = try std.fs.cwd().createFile("src/parser/abnf.gen.zig", .{});
+  const file = try std.fs.cwd().createFile("src/parser/gen/abnf.zig", .{});
   defer file.close();
   try file.writer().print("{p}", .{rule_set});
+}
+
+pub fn main() !void {
+  var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+  defer if (gpa.deinit() != .ok) std.debug.panic("leak", .{});
+  const allocator = gpa.allocator();
+  var args = try std.process.argsAlloc(allocator);
+  defer std.process.argsFree(allocator, args);
+
+  const usage = "Usage: gen-abnf path-to-abnf [path-to-output-file]";
+  
+  if (args.len == 1) {
+    std.debug.print(usage, .{});
+    return;
+  }
+
+  const abnf_text = try std.fs.cwd().readFileAlloc(allocator, args[1], std.math.maxInt(usize));
+  defer allocator.free(abnf_text);
+
+  const rule_set = try parser(abnf_text, allocator);
+  defer rule_set.deinit(allocator);
+
+  const output_file = blk: { if (args.len > 2) {
+    break :blk try std.fs.cwd().createFile(args[2], .{});
+  } else {
+    const ext_len = std.fs.path.extension(args[1]).len;
+    const output_path = try std.mem.concat(allocator, u8, &.{args[1][0..args[1].len - ext_len], ".zig"});
+    defer allocator.free(output_path);
+    break :blk try std.fs.cwd().createFile(output_path, .{});
+  }};
+  defer output_file.close();
+
+  try rule_set.format("p", .{}, output_file.writer());
 }
