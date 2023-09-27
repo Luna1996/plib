@@ -1,4 +1,5 @@
 const std = @import("std");
+const stdx = @import("../stdx.zig");
 
 pub const Rule = union(enum) {
   alt: []const Rule,
@@ -31,6 +32,14 @@ pub fn Node(comptime Tag: type) type {
       return self.sub.items[i];
     }
 
+    fn restor(self: *@This(), i: usize, j: usize) void {
+      self.raw.len = i;
+      for (self.sub.items[j..]) |sub| {
+        sub.deinit();
+      }
+      self.sub.shrinkAndFree(j);
+    }
+
     pub fn format(
       self: @This(),
       comptime fmt: []const u8,
@@ -42,7 +51,7 @@ pub fn Node(comptime Tag: type) type {
       }
       try writer.print("[{s}]", .{@tagName(self.tag)});
       if (self.sub.items.len == 0) {
-        try std.json.encodeJsonString(self.raw, .{}, writer);
+        try stdx.printEscapedStringWithQuotes(self.raw, writer);
       }
       try writer.writeAll("\n");
       if (self.sub.items.len != 0) {
@@ -99,13 +108,13 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn([]const u8
     ) ParseError!void {
       switch (rule) {
         .alt => |alt| {
-          const len = node.raw.len;
+          const i = node.raw.len;
+          const j = node.sub.items.len;
           for (alt) |sub| {
             if (parseRule(text, node, sub)){
               return;
             } else |_| {
-              node.raw.len = len;
-              continue;
+              node.restor(i, j);
             }
           }
           return error.UnknownParseError;
@@ -118,13 +127,21 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn([]const u8
         .rep => |rep| {
           var count: usize = 0;
           while (rep.max == null or count < rep.max.?) {
-            parseRule(text, node, rep.sub.*) catch break;
-            count += 1;
+            const i = node.raw.len;
+            const j = node.sub.items.len;
+            if (parseRule(text, node, rep.sub.*)) {
+              count += 1;
+            } else |_| {
+              node.restor(i, j);
+              break;
+            }
           }
           if (count < rep.min) return error.UnknownParseError; 
         },
         .str => |str| {
-          if (std.mem.startsWith(u8, text[node.raw.len..], str)) {
+          if (str.len == 1 and str[0] == '\x00' and node.raw.len == text.len) {
+            return;
+          } else if (std.mem.startsWith(u8, text[node.raw.len..], str)) {
             node.raw.len += str.len;
           } else {
             return error.UnknownParseError;

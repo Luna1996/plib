@@ -3,7 +3,7 @@
 const std = @import("std");
 const stdx = @import("../stdx.zig");
 const ast = @import("ast.zig");
-const Syntax = @import("abnf.gen.old.zig");
+const Syntax = @import("abnf.gen.new.zig");
 
 const Tag = Syntax.Tag;
 
@@ -207,10 +207,10 @@ fn buildRule(
     .option => {
       const next = try allocator.create(Rule);
       try buildRule(allocator, name_map, node.get(0), next);
-      rule.* = .{.rep = .{.max = 1, .sub = next}};
+      rule.* = .{.rep = .{.min = 1, .sub = next}};
     },
     .char_val => {
-      rule.* = .{.str = try allocator.dupe(u8, node.raw[1..node.raw.len - 1])};
+      rule.* = .{.str = try allocator.dupe(u8, node.raw)};
     },
     .bin_val, .dec_val, .hex_val => {
       const base: u8 = switch (node.tag) {
@@ -219,27 +219,23 @@ fn buildRule(
         .hex_val => 16,
         else => unreachable,
       };
-      const text = node.raw[1..];
-      if (std.mem.indexOfScalar(u8, text, '-')) |hyphen| {
+      if (std.mem.indexOfScalar(u8, node.raw, '-')) |hyphen| {
         rule.* = .{.val = .{
-          .min = try std.fmt.parseUnsigned(u8, text[0..hyphen], base),
-          .max = try std.fmt.parseUnsigned(u8, text[hyphen + 1..], base),
+          .min = try std.fmt.parseUnsigned(u8, node.raw[0..hyphen], base),
+          .max = try std.fmt.parseUnsigned(u8, node.raw[hyphen + 1..], base),
         }};
       } else {
         var buffer = std.ArrayList(u8).init(allocator);
         defer buffer.deinit();
-        var iter = std.mem.tokenizeScalar(u8, text, '.');
+        var iter = std.mem.tokenizeScalar(u8, node.raw, '.');
         while (iter.next()) |token| {
           try buffer.append(try std.fmt.parseUnsigned(u8, token, base));
         }
         rule.* = .{.str = try buffer.toOwnedSlice()};
       }
     },
-    .rulename => {
+    .rulename, .prose_val => {
       rule.* = .{.jmp = name_map.get(node.raw).?};
-    },
-    .prose_val => {
-      rule.* = .{.jmp = name_map.get(node.raw[1..node.raw.len-1]).?};
     },
     else => unreachable,
   }
@@ -248,12 +244,10 @@ fn buildRule(
 pub const Builder = struct {
   pub const root: Tag = .rulelist;
   pub const ignore: []const Tag = &.{
-    .elements, .group, .element, .num_val,
-    .c_wsp, .c_nl, .comment,
-    .ALPHA, .BIT, .CHAR, .CR,
-    .CRLF, .CTL, .DIGIT, .DQUOTE,
-    .HEXDIG, .HTAB, .LF, .LWSP,
-    .OCTET, .SP, .VCHAR, .WSP
+    .comment,
+    .empty_line, .empty,
+    .alpha, .wsp, .crlf,
+    .bit, .dec, .hex,
   };
 
   pub fn build(
@@ -300,10 +294,11 @@ pub const Builder = struct {
 pub const parser = ast.createParser(Syntax, Builder);
 
 test {
+  std.debug.print("\n", .{});
   const allocator = std.testing.allocator;
   const rule_set = try parser(@embedFile("abnf.abnf"), allocator);
   defer rule_set.deinit(allocator);
-  const file = try std.fs.cwd().createFile("src/parser/abnf.gen.zig", .{});
+  const file = try std.fs.cwd().createFile("src/parser/abnf.gen.new.zig", .{});
   defer file.close();
   try file.writer().print("{p}", .{rule_set});
 }

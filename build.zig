@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
+  if (b.args == null or b.args.?.len == 0) return;
   const file = b.args.?[0];
   const base = std.fs.path.basename(b.args.?[0]);
   const opts = .{
@@ -8,6 +9,7 @@ pub fn build(b: *std.Build) void {
     .root_source_file = .{ .path = file },
     .target = b.standardTargetOptions(.{}),
     .optimize = b.standardOptimizeOption(.{}),
+    .main_pkg_path = std.Build.LazyPath.relative("src"),
   };
 
   b.installArtifact(b.addExecutable(opts));

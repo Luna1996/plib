@@ -1,0 +1,68 @@
+rulelist       =  *empty-line *rule
+
+rule           =  rulename [empty] defined-as [empty] alternation *empty-line
+                      ; continues if next line starts
+                      ;  with white space
+
+rulename       =  alpha *(alpha / dec / "-")
+
+defined-as     =  "=" / "=/"
+                      ; basic rules definition and
+                      ;  incremental alternatives
+
+alternation    =  concatenation *([empty] "/" [empty] concatenation)
+
+concatenation  =  repetition *(empty repetition)
+
+repetition     =  [repeat] (
+                    rulename /
+                    option /
+                    "(" [empty] alternation [empty] ")" /
+                    %x22 char-val %x22 /
+                    "%b" bin-val /
+                    "%d" dec-val /
+                    "%x" hex-val /
+                    "<" prose-val ">")
+
+repeat         =  (*dec "*" *dec) / 1*dec
+
+option         =  "[" [empty] alternation [empty] "]"
+
+char-val       =  *(%x20-21 / %x23-7E)
+                      ; quoted string of SP and VCHAR
+                      ;  without quote
+
+bin-val        =  1*bit [ 1*("." 1*bit) / ("-" 1*bit) ]
+                      ; series of concatenated bit values
+                      ;  or single ONEOF range
+
+dec-val        =  1*dec [ 1*("." 1*dec) / ("-" 1*dec) ]
+
+hex-val        =  1*hex [ 1*("." 1*hex) / ("-" 1*hex) ]
+
+prose-val      =  *(%x20-3D / %x3F-7E)
+                      ; bracketed string of SP and VCHAR
+                      ;  without angles
+                      ; prose description, to be used as
+                      ;  last resort
+
+empty-line     =  *wsp [comment] crlf
+
+empty          =  *empty-line 1*wsp
+
+comment        =  ";" *(wsp / %x21-7E)
+
+alpha          =  %x41-5A / %x61-7A   ; A-Z / a-z
+
+wsp            =  %x20 / %x09
+                      ; white space
+
+crlf           =  %x0D.0A
+                      ; Internet standard newline
+
+bit            =  "0" / "1"
+
+dec            =  %x30-39
+                      ; 0-9
+
+hex            =  dec / "A" / "B" / "C" / "D" / "E" / "F"
