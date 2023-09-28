@@ -1,3 +1,9 @@
+; Equivalent to the syntax defined in
+; https://www.rfc-editor.org/rfc/rfc5234#section-4
+; with several QoL improvement:
+; 1. Allow not end with '\n'.
+; 2. Change terminal boundary for easier parse.
+
 rulelist       =  *empty-line *rule
 
 rule           =  rulename [empty] defined-as [empty] alternation *empty-line

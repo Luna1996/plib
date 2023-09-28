@@ -126,7 +126,7 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn([]const u8
         },
         .rep => |rep| {
           var count: usize = 0;
-          while (rep.max == null or count < rep.max.?) {
+          while ((rep.max == null or count < rep.max.?) and node.raw.len < text.len) {
             const i = node.raw.len;
             const j = node.sub.items.len;
             if (parseRule(text, node, rep.sub.*)) {
@@ -139,9 +139,7 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn([]const u8
           if (count < rep.min) return error.UnknownParseError; 
         },
         .str => |str| {
-          if (str.len == 1 and str[0] == '\x00' and node.raw.len == text.len) {
-            return;
-          } else if (std.mem.startsWith(u8, text[node.raw.len..], str)) {
+          if (std.mem.startsWith(u8, text[node.raw.len..], str)) {
             node.raw.len += str.len;
           } else {
             return error.UnknownParseError;

@@ -289,16 +289,6 @@ pub const Builder = struct {
 
 pub const parser = ast.createParser(Syntax, Builder);
 
-test {
-  std.debug.print("\n", .{});
-  const allocator = std.testing.allocator;
-  const rule_set = try parser(@embedFile("abnf/abnf.abnf"), allocator);
-  defer rule_set.deinit(allocator);
-  const file = try std.fs.cwd().createFile("src/parser/gen/abnf.zig", .{});
-  defer file.close();
-  try file.writer().print("{p}", .{rule_set});
-}
-
 pub fn main() !void {
   var gpa = std.heap.GeneralPurposeAllocator(.{}){};
   defer if (gpa.deinit() != .ok) std.debug.panic("leak", .{});
