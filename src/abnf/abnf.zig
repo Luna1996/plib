@@ -2,12 +2,12 @@
 
 const std = @import("std");
 const stdx = @import("../stdx.zig");
-const ast = @import("ast.zig");
-const Syntax = @import("gen/abnf.zig");
+const parser = @import("../parser.zig");
+const Syntax = @import("abnf.abnf.zig");
 
 const Tag = Syntax.Tag;
 
-const Node = ast.Node;
+const Node = parser.Node;
 
 const Rule = union(enum) {
   alt: std.ArrayList(*Rule),
@@ -287,7 +287,7 @@ pub const Builder = struct {
   }
 };
 
-pub const parser = ast.createParser(Syntax, Builder);
+pub const parse = parser.createParser(Syntax, Builder);
 
 pub fn main() !void {
   var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -296,28 +296,30 @@ pub fn main() !void {
   var args = try std.process.argsAlloc(allocator);
   defer std.process.argsFree(allocator, args);
 
-  const usage = "Usage: gen-abnf path-to-abnf [path-to-output-file]";
-  
   if (args.len == 1) {
-    std.debug.print(usage, .{});
+    std.debug.print("Usage: gen-abnf path-to-abnf [path-to-output-file]", .{});
     return;
   }
 
-  const abnf_text = try std.fs.cwd().readFileAlloc(allocator, args[1], std.math.maxInt(usize));
-  defer allocator.free(abnf_text);
-
-  const rule_set = try parser(abnf_text, allocator);
-  defer rule_set.deinit(allocator);
-
-  const output_file = blk: { if (args.len > 2) {
-    break :blk try std.fs.cwd().createFile(args[2], .{});
+  if (args.len > 2) {
+    try gen_abnf(allocator, args[1], args[2]);
   } else {
-    const ext_len = std.fs.path.extension(args[1]).len;
-    const output_path = try std.mem.concat(allocator, u8, &.{args[1][0..args[1].len - ext_len], ".zig"});
+    const output_path = try std.mem.concat(allocator, u8, &.{args[1], ".zig"});
     defer allocator.free(output_path);
-    break :blk try std.fs.cwd().createFile(output_path, .{});
-  }};
-  defer output_file.close();
+    try gen_abnf(allocator, args[1], output_path);
+  }
+}
 
+pub fn gen_abnf(allocator: std.mem.Allocator, input_path: []const u8, output_path: []const u8) !void {
+  const abnf_text = try std.fs.cwd().readFileAlloc(allocator, input_path, std.math.maxInt(usize));
+  defer allocator.free(abnf_text);
+  const output_file = std.fs.cwd().createFile(output_path, .{});
+  defer output_file.close();
+  const rule_set = try parse(abnf_text, allocator);
+  defer rule_set.deinit(allocator);
   try rule_set.format("p", .{}, output_file.writer());
+}
+
+test {
+  try gen_abnf(std.testing.allocator, "src/parser/test.abnf", "src/parser/test.abnf.zig");
 }

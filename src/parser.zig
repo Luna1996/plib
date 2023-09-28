@@ -20,16 +20,21 @@ pub const Rule = union(enum) {
 pub fn Node(comptime Tag: type) type {
   return struct {
     tag: Tag,
-    raw: []const u8,
-    sub: std.ArrayList(Node(Tag)),
+    pos: usize, len: usize,
+    sub: std.ArrayList(*Node(Tag)),
 
-    pub fn deinit(self: @This()) void {
-      for (self.sub.items) |item| { item.deinit(); }
+    pub fn destroy(self: *@This(), allocator: std.mem.Allocator) void {
+      for (self.sub.items) |sub| sub.deinit(allocator);
       self.sub.deinit();
+      allocator.destroy(self);
     }
 
-    pub fn get(self: @This(), i: usize) Node(Tag) {
+    pub fn get(self: @This(), i: usize) *Node(Tag) {
       return self.sub.items[i];
+    }
+
+    pub fn raw(self: @This(), text: []const u8) []const u8 {
+      return text[self.pos..self.pos + self.len];
     }
 
     fn restor(self: *@This(), i: usize, j: usize) void {
@@ -41,7 +46,7 @@ pub fn Node(comptime Tag: type) type {
     }
 
     pub fn format(
-      self: @This(),
+      self: *@This(),
       comptime fmt: []const u8,
       options: std.fmt.FormatOptions,
       writer: anytype,
@@ -85,7 +90,7 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn([]const u8
 
   comptime var flag = [_]bool{true} ** std.meta.fields(Tag).len;
   for (Builder.ignore) |tag| { flag[@intFromEnum(tag)] = false; }
-  
+
   const Clojure = struct {
     fn parse(
       text: []const u8,
