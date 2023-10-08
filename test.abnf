@@ -4,7 +4,7 @@
 ; 1. Allow not end with '\n'.
 ; 2. Change terminal boundary for easier parse.
 
-rulelist       =  *empty-line 1*rule
+rulelist       =  *empty-line 1*
 
 rule           =  rulename [empty] defined-as [empty] alternation *empty-line
                       ; continues if next line starts

@@ -1,5 +1,5 @@
 const std = @import("std");
-const stdx = @import("../stdx.zig");
+const stdx = @import("stdx.zig");
 
 const Rule = union(enum) {
   alt: []const Rule,
@@ -26,7 +26,7 @@ pub fn Node(comptime Tag: type) type {
     sub: std.ArrayList(*Self),
 
     fn create(allocator: std.mem.Allocator, tag: Tag, pos: usize) !*Self {
-      var node = try allocator.create(usize);
+      var node = try allocator.create(Self);
       node.tag = tag;
       node.pos = pos;
       node.len = 0;
@@ -56,25 +56,23 @@ pub fn Node(comptime Tag: type) type {
       self.sub.shrinkAndFree(j);
     }
 
-    pub fn format(
+    pub fn print(
       self: *const Self,
-      comptime fmt: []const u8,
-      options: std.fmt.FormatOptions,
+      text: []const u8,
+      indent: usize,
       writer: anytype,
     ) !void {
-      if (options.width != null) {
-        try writer.writeByteNTimes(' ', options.width.?);
-      }
-      try writer.print("[{s}]", .{@tagName(self.tag)});
+      try writer.writeByteNTimes(' ', indent);
+      try writer.writeAll("[");
+      try writer.writeAll(@tagName(self.tag));
+      try writer.writeAll("]");
       if (self.sub.items.len == 0) {
-        try stdx.printEscapedStringWithQuotes(self.raw, writer);
+        try stdx.printEscapedStringWithQuotes(self.raw(text), writer);
       }
       try writer.writeAll("\n");
       if (self.sub.items.len != 0) {
-        var next_options = options;
-        next_options.width = (next_options.width orelse 0) + 2;
         for (self.sub.items) |item| {
-          try item.format(fmt, next_options, writer);
+          try item.print(text, indent + 2, writer);
         }
       }
     }
@@ -86,38 +84,43 @@ fn ParseError(comptime Tag: type) type {
     const Self = @This();
     const Record = struct{
       tag: Tag,
-      rule: *const Rule,
+      rule: Rule,
     };
     const RecordList = std.ArrayList(Record);
-    const RecordMap = std.HashMap(RecordList);
+    const RecordMap = std.AutoArrayHashMap(usize, RecordList);
+    const SortContext = struct {
+      keys: []const usize,
+      pub fn lessThan(self: @This(), ai: usize, bi: usize) bool {
+        return self.keys[ai] < self.keys[bi];
+      }
+    };
 
-    text: []const u8,
+    input: Input,
     records: RecordMap,
 
-    fn init(allocator: std.mem.Allocator) Self {
-      return .{.records = RecordMap.init(allocator)};
+    fn init(allocator: std.mem.Allocator, input: Input) Self {
+      return .{.input = input, .records = RecordMap.init(allocator)};
     }
 
-    fn deinit(self: *const Self) void {
-      var iter = self.records.valueIterator();
-      while (iter.next()) |item| {
+    fn deinit(self: *Self) void {
+      for (self.records.values()) |item| {
         item.deinit();
       }
       self.records.deinit();
     }
 
     fn reset(self: *Self) void {
-      var iter = self.records.valueIterator();
-      while (iter.next()) |item| {
+      for (self.records.values()) |item| {
         item.deinit();
       }
       self.records.clearRetainingCapacity();
     }
 
-    fn put(self: *Self, pos: usize, tag: Tag, rule: *const Rule) !void {
+    fn put(self: *Self, pos: usize, tag: Tag, rule: Rule) !void {
       var res = try self.records.getOrPut(pos);
       if (!res.found_existing) {
         res.value_ptr.* = RecordList.init(self.records.allocator);
+        self.records.sort(SortContext{.keys = self.records.keys()});
       }
       try res.value_ptr.append(.{.tag = tag, .rule = rule});
     }
@@ -128,23 +131,61 @@ fn ParseError(comptime Tag: type) type {
       options: std.fmt.FormatOptions,
       writer: anytype,
     ) !void {
-      _ = writer;
       _ = options;
       _ = fmt;
-      var iter = self.records.keyIterator();
-      _ = iter;
+      const path = self.input.path orelse "(unknown)";
+      var line: usize = 0;
+      var line_start: usize = 0;
+      var line_end = std.mem.indexOfScalarPos(u8, self.input.text, line_start, '\n');
+      for (self.records.keys(), self.records.values()) |pos, items| {
+        while (line_end != null and line_end.? < pos) {
+          line_start = line_end.? + 1;
+          line_end = std.mem.indexOfScalarPos(u8, self.input.text, line_start, '\n');
+          line += 1;
+        }
+        try writer.writeAll(path);
+        try writer.print(":{d}:{d}: ParseError\n", .{line + 1, pos - line_start + 1});
+        try writer.writeAll(self.input.text[line_start..if (line_end) |end| end - 1 else self.input.text.len]);
+        try writer.writeAll("\n");
+        try writer.writeByteNTimes(' ', pos - line_start);
+        try writer.writeAll("^\n");
+        for (items.items) |item| {
+          try writer.writeAll("  <");
+          try writer.writeAll(@tagName(item.tag));
+          try writer.writeAll("> expecting ");
+          switch (item.rule) {
+            .str => |str| {
+              try stdx.printEscapedStringWithQuotes(str, writer);
+            },
+            .val => |val| {
+              try writer.writeAll("'");
+              try stdx.printEscapedString(&.{val.min}, writer);
+              try writer.writeAll("'-'");
+              try stdx.printEscapedString(&.{val.max}, writer);
+              try writer.writeAll("'");
+            },
+            else => unreachable,
+          }
+          try writer.writeAll(";\n");
+        }
+      }
     }
   };
 }
+
+pub const Input = struct {
+  path: ?[]const u8,
+  text: []const u8,
+};
 
 fn Output(comptime Builder: type) type {
   const output_info = @typeInfo(@typeInfo(@TypeOf(Builder.build)).Fn.return_type.?).ErrorUnion;
   comptime var BuildError = output_info.error_set;
   comptime var OutputType = output_info.payload;
-  return (error.ParseError || std.mem.Allocator.Error || BuildError)!OutputType;
+  return (error {ParseError} || std.mem.Allocator.Error || BuildError)!OutputType;
 }
 
-pub fn createParser(comptime Syntax: type, comptime Builder: type) fn([]const u8, std.mem.Allocator) Output(Builder) {
+pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Allocator, Input) Output(Builder) {
   const Tag = Syntax.Tag;
   
   const rules: []const Rule = Syntax.rules;
@@ -156,18 +197,21 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn([]const u8
 
   const Clojure = struct {
     fn parse(
-      text: []const u8,
       allocator: std.mem.Allocator,
+      input: Input,
     ) Output(Builder) {
       const node = try Node(Tag).create(allocator, root, 0);
-      errdefer node.deinit();
+      errdefer node.destroy(allocator);
 
-      var errs = ParseError.init(allocator);
+      var errs = ParseError(Tag).init(allocator, input);
       defer errs.deinit();
 
-      try parseRule(allocator, node, &rules[@intFromEnum(root)], &errs);
+      parseRule(allocator, root, input.text, node, &rules[@intFromEnum(root)], &errs) catch |code| switch (code) {
+        error.ParseError => std.debug.print("{}", .{errs}),
+        else => return code,
+      };
       
-      return try Builder.build(allocator, text, node);
+      return try Builder.build(allocator, input.text, node);
     }
 
     fn parseRule(
@@ -176,18 +220,18 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn([]const u8
       text: []const u8,
       node: *Node(Tag),
       rule: *const Rule,
-      errs: *ParseError,
+      errs: *ParseError(Tag),
     ) !void {
       switch (rule.*) {
         .alt => |alt| {
           const i = node.len;
           const j = node.sub.items.len;
           for (alt) |sub| {
-            if (parseRule(allocator, tag, text, node, &sub, errs)){
+            if (parseRule(allocator, tag, text, node, &sub, errs)) {
               errs.reset();
               return;
             } else |_| {
-              node.restor(i, j);
+              node.restor(allocator, i, j);
             }
           }
           return error.ParseError;
@@ -205,7 +249,7 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn([]const u8
             if (parseRule(allocator, tag, text, node, rep.sub, errs)) {
               count += 1;
             } else |_| {
-              node.restor(i, j);
+              node.restor(allocator, i, j);
               break;
             }
           }
@@ -215,33 +259,35 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn([]const u8
           errs.reset();
         },
         .str => |str| {
-          if (std.mem.eql(u8, text[node.pos..node.pos + str.len], str)) {
+          const pos = node.pos + node.len;
+          if (std.mem.startsWith(u8, text[pos..], str)) {
             node.len += str.len;
           } else {
-            try errs.put(node.pos, tag, rule);
+            try errs.put(pos, tag, rule.*);
             return error.ParseError;
           }
         },
         .val => |val| {
-          if (text.len <= node.raw.len) return error.ParseError;
-          const next = text[node.raw.len];
-          if (val.min <= next and next <= val.max) {
-            node.raw.len += 1;
+          const pos = node.pos + node.len;
+          if (text.len <= pos) return error.ParseError;
+          const next_char = text[pos];
+          if (val.min <= next_char and next_char <= val.max) {
+            node.len += 1;
           } else {
-            try errs.put(node.pos, tag, rule);
+            try errs.put(pos, tag, rule.*);
             return error.ParseError;
           }
         },
         .jmp => |jmp| {
           if (flag[jmp]) {
-            const new_tag: Tag = @enumFromInt(jmp);
-            var new_node = try Node(Tag).create(allocator, tag, node.pos + node.len);
-            errdefer new_node.deinit();
+            const new_tag = @as(Tag, @enumFromInt(jmp));
+            var new_node = try Node(Tag).create(allocator, new_tag, node.pos + node.len);
+            errdefer new_node.destroy(allocator);
             try parseRule(allocator, new_tag, text, new_node, &rules[jmp], errs);
             try node.sub.append(new_node);
             node.len += new_node.len;
           } else {
-            try parseRule(allocator, tag, text, node, rules[jmp], errs);
+            try parseRule(allocator, tag, text, node, &rules[jmp], errs);
           }
         },
       }

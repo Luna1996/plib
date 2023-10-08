@@ -160,57 +160,58 @@ const RuleSet = struct {
 fn buildRule(
   allocator: std.mem.Allocator,
   name_map: std.StringHashMap(usize),
-  node: Node(Tag),
+  text: []const u8,
+  node: *Node(Tag),
   rule: *Rule,
 ) !void {
   const len = node.sub.items.len;
   switch (node.tag) {
     .alternation, .concatenation => {
       if (len == 1) {
-        try buildRule(allocator, name_map, node.get(0), rule);
+        try buildRule(allocator, name_map, text, node.get(0), rule);
       } else {
         rule.* = switch (node.tag) {
           .alternation => .{.alt = std.ArrayList(*Rule).init(allocator)},
           .concatenation => .{.con = std.ArrayList(*Rule).init(allocator)},
           else => unreachable,
         };
-        for (node.sub.items) |item| {
-          var next = try allocator.create(Rule);
-          try buildRule(allocator, name_map, item, next);
-          try rule.append(next);
+        for (node.sub.items) |sub_node| {
+          var sub_rule = try allocator.create(Rule);
+          try buildRule(allocator, name_map, text, sub_node, sub_rule);
+          try rule.append(sub_rule);
         }
       }
     },
     .repetition => {
       if (node.get(0).tag == .repeat) {
         rule.* = .{.rep = undefined};
-        const rept = node.get(0).raw;
+        const rept = node.get(0).raw(text);
         if (std.mem.indexOfScalar(u8, rept, '*')) |star| {
           if (star != 0) {
-            rule.*.rep.min = try std.fmt.parseUnsigned(usize, rept[0..star], 10);
+            rule.rep.min = try std.fmt.parseUnsigned(usize, rept[0..star], 10);
           }
           if (star != rept.len - 1) {
-            rule.*.rep.max = try std.fmt.parseUnsigned(usize, rept[star + 1..], 10);
+            rule.rep.max = try std.fmt.parseUnsigned(usize, rept[star + 1..], 10);
           }
         } else {
           const n = try std.fmt.parseUnsigned(usize, rept, 10);
-          rule.*.rep.min = n;
-          rule.*.rep.max = n;
+          rule.rep.min = n;
+          rule.rep.max = n;
         }
         const next = try allocator.create(Rule);
-        try buildRule(allocator, name_map, node.get(1), next);
-        rule.*.rep.sub = next;
+        try buildRule(allocator, name_map, text, node.get(1), next);
+        rule.rep.sub = next;
       } else {
-        try buildRule(allocator, name_map, node.get(0), rule);
+        try buildRule(allocator, name_map, text, node.get(0), rule);
       }
     },
     .option => {
       const next = try allocator.create(Rule);
-      try buildRule(allocator, name_map, node.get(0), next);
+      try buildRule(allocator, name_map, text, node.get(0), next);
       rule.* = .{.rep = .{.max = 1, .sub = next}};
     },
     .char_val => {
-      rule.* = .{.str = try allocator.dupe(u8, node.raw)};
+      rule.* = .{.str = try allocator.dupe(u8, node.raw(text))};
     },
     .bin_val, .dec_val, .hex_val => {
       const base: u8 = switch (node.tag) {
@@ -219,15 +220,15 @@ fn buildRule(
         .hex_val => 16,
         else => unreachable,
       };
-      if (std.mem.indexOfScalar(u8, node.raw, '-')) |hyphen| {
+      if (std.mem.indexOfScalar(u8, node.raw(text), '-')) |hyphen| {
         rule.* = .{.val = .{
-          .min = try std.fmt.parseUnsigned(u8, node.raw[0..hyphen], base),
-          .max = try std.fmt.parseUnsigned(u8, node.raw[hyphen + 1..], base),
+          .min = try std.fmt.parseUnsigned(u8, node.raw(text)[0..hyphen], base),
+          .max = try std.fmt.parseUnsigned(u8, node.raw(text)[hyphen + 1..], base),
         }};
       } else {
         var buffer = std.ArrayList(u8).init(allocator);
         defer buffer.deinit();
-        var iter = std.mem.tokenizeScalar(u8, node.raw, '.');
+        var iter = std.mem.tokenizeScalar(u8, node.raw(text), '.');
         while (iter.next()) |token| {
           try buffer.append(try std.fmt.parseUnsigned(u8, token, base));
         }
@@ -235,7 +236,7 @@ fn buildRule(
       }
     },
     .rulename, .prose_val => {
-      rule.* = .{.jmp = name_map.get(node.raw).?};
+      rule.* = .{.jmp = name_map.get(node.raw(text)).?};
     },
     else => unreachable,
   }
@@ -252,19 +253,24 @@ pub const Builder = struct {
 
   pub fn build(
     allocator: std.mem.Allocator,
-    node: Node(Tag),
+    text: []const u8,
+    node: *Node(Tag),
   ) !RuleSet {
+    defer node.destroy(allocator);
+    const file = try std.fs.cwd().createFile("output.txt", .{});
+    defer file.close();
+    try node.print(text, 0, file.writer());
     var rule_set = try RuleSet.init(allocator);
     
     var name_map = std.StringHashMap(usize).init(allocator);
     defer name_map.deinit();
-    var node_map = std.ArrayList(Node(Tag)).init(allocator);
+    var node_map = std.ArrayList(*Node(Tag)).init(allocator);
     defer node_map.deinit();
 
     for (node.sub.items) |item| {
-      const rulename = item.get(0).raw;
+      const rulename = item.get(0).raw(text);
       if (name_map.get(rulename)) |i| {
-        var last: Node(Tag) = node_map.items[i];
+        var last = node_map.items[i];
         const more = item.get(2).sub;
         try last.sub.appendSlice(more.items);
         more.deinit();
@@ -279,7 +285,7 @@ pub const Builder = struct {
     
     for (node_map.items) |item| {
       const rule = try allocator.create(Rule);
-      try buildRule(allocator, name_map, item, rule);
+      try buildRule(allocator, name_map, text, item, rule);
       try rule_set.rules.append(rule);
     }
 
@@ -313,13 +319,16 @@ pub fn main() !void {
 pub fn gen_abnf(allocator: std.mem.Allocator, input_path: []const u8, output_path: []const u8) !void {
   const abnf_text = try std.fs.cwd().readFileAlloc(allocator, input_path, std.math.maxInt(usize));
   defer allocator.free(abnf_text);
-  const output_file = std.fs.cwd().createFile(output_path, .{});
+  const output_file = try std.fs.cwd().createFile(output_path, .{});
   defer output_file.close();
-  const rule_set = try parse(abnf_text, allocator);
+  const real_path = try std.fs.cwd().realpathAlloc(allocator, input_path);
+  defer allocator.free(real_path);
+  const rule_set = try parse(allocator, .{.path = real_path, .text = abnf_text});
   defer rule_set.deinit(allocator);
   try rule_set.format("p", .{}, output_file.writer());
 }
 
 test {
-  try gen_abnf(std.testing.allocator, "src/parser/test.abnf", "src/parser/test.abnf.zig");
+  std.debug.print("\n", .{});
+  gen_abnf(std.testing.allocator, "test.abnf", "test.abnf.zig") catch {};
 }

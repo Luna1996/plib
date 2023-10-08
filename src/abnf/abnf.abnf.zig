@@ -25,7 +25,7 @@ pub const Tag = enum {
 };
 
 pub const rules = &.{
-  .{.con=&.{.{.rep=.{.sub=&.{.jmp=14}}},.{.rep=.{.sub=&.{.jmp=1}}},}},
+  .{.con=&.{.{.rep=.{.sub=&.{.jmp=14}}},.{.rep=.{.min=1,.sub=&.{.jmp=1}}},}},
   .{.con=&.{.{.jmp=2},.{.rep=.{.max=1,.sub=&.{.jmp=15}}},.{.jmp=3},.{.rep=.{.max=1,.sub=&.{.jmp=15}}},.{.jmp=4},.{.rep=.{.sub=&.{.jmp=14}}},}},
   .{.con=&.{.{.jmp=17},.{.rep=.{.sub=&.{.alt=&.{.{.jmp=17},.{.jmp=21},.{.str="-"},}}}},}},
   .{.alt=&.{.{.str="="},.{.str="=/"},}},
