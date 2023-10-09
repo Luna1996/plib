@@ -86,88 +86,62 @@ fn ParseError(comptime Tag: type) type {
       tag: Tag,
       rule: Rule,
     };
-    const RecordList = std.ArrayList(Record);
-    const RecordMap = std.AutoArrayHashMap(usize, RecordList);
-    const SortContext = struct {
-      keys: []const usize,
-      pub fn lessThan(self: @This(), ai: usize, bi: usize) bool {
-        return self.keys[ai] < self.keys[bi];
-      }
-    };
 
-    input: Input,
-    records: RecordMap,
+    pos: usize,
+    records: std.ArrayList(Record),
 
-    fn init(allocator: std.mem.Allocator, input: Input) Self {
-      return .{.input = input, .records = RecordMap.init(allocator)};
+    fn init(allocator: std.mem.Allocator) Self {
+      return .{.pos = 0, .records = std.ArrayList(Record).init(allocator)};
     }
 
     fn deinit(self: *Self) void {
-      for (self.records.values()) |item| {
-        item.deinit();
-      }
       self.records.deinit();
     }
 
-    fn reset(self: *Self) void {
-      for (self.records.values()) |item| {
-        item.deinit();
-      }
-      self.records.clearRetainingCapacity();
-    }
-
     fn put(self: *Self, pos: usize, tag: Tag, rule: Rule) !void {
-      var res = try self.records.getOrPut(pos);
-      if (!res.found_existing) {
-        res.value_ptr.* = RecordList.init(self.records.allocator);
-        self.records.sort(SortContext{.keys = self.records.keys()});
+      if (pos < self.pos) return;
+      if (pos > self.pos) {
+        try self.records.resize(0);
+        self.pos = pos;
       }
-      try res.value_ptr.append(.{.tag = tag, .rule = rule});
+      try self.records.append(.{.tag = tag, .rule = rule});
     }
 
-    pub fn format(
+    fn print(
       self: *const Self,
-      comptime fmt: []const u8,
-      options: std.fmt.FormatOptions,
+      input: Input,
       writer: anytype,
     ) !void {
-      _ = options;
-      _ = fmt;
-      const path = self.input.path orelse "(unknown)";
-      var line: usize = 0;
-      var line_start: usize = 0;
-      var line_end = std.mem.indexOfScalarPos(u8, self.input.text, line_start, '\n');
-      for (self.records.keys(), self.records.values()) |pos, items| {
-        while (line_end != null and line_end.? < pos) {
-          line_start = line_end.? + 1;
-          line_end = std.mem.indexOfScalarPos(u8, self.input.text, line_start, '\n');
-          line += 1;
+      if (self.records.items.len == 0) return;
+      try writer.writeAll("Encounter ParseError!\n");
+      const path = input.path orelse "(unknown)";
+      var line = std.mem.count(u8, input.text[0..self.pos], "\n") + 1;
+      var line_start = if (std.mem.lastIndexOfScalar(u8, input.text[0..self.pos], '\n')) |start| start + 1 else 0;
+      var line_end = std.mem.indexOfScalarPos(u8, input.text, self.pos, '\n') orelse input.text.len;
+      try writer.writeAll(path);
+      try writer.print(":{d}:{d}\n", .{line, self.pos - line_start + 1});
+      try writer.writeAll(input.text[line_start..line_end]);
+      try writer.writeAll("\n");
+      try writer.writeByteNTimes(' ', self.pos - line_start);
+      try writer.writeAll("^\n");
+      for (self.records.items) |item| {
+        try writer.writeAll("  <");
+        try writer.writeAll(@tagName(item.tag));
+        try writer.writeAll("> expecting ");
+        switch (item.rule) {
+          .str => |str| {
+            try stdx.printEscapedStringWithQuotes(str, writer);
+          },
+          .val => |val| {
+            try writer.writeAll("'");
+            try stdx.printEscapedString(&.{val.min}, writer);
+            try writer.writeAll("'-'");
+            try stdx.printEscapedString(&.{val.max}, writer);
+            try writer.writeAll("'");
+          },
+          else => unreachable,
         }
-        try writer.writeAll(path);
-        try writer.print(":{d}:{d}: ParseError\n", .{line + 1, pos - line_start + 1});
-        try writer.writeAll(self.input.text[line_start..if (line_end) |end| end - 1 else self.input.text.len]);
-        try writer.writeAll("\n");
-        try writer.writeByteNTimes(' ', pos - line_start);
-        try writer.writeAll("^\n");
-        for (items.items) |item| {
-          try writer.writeAll("  <");
-          try writer.writeAll(@tagName(item.tag));
-          try writer.writeAll("> expecting ");
-          switch (item.rule) {
-            .str => |str| {
-              try stdx.printEscapedStringWithQuotes(str, writer);
-            },
-            .val => |val| {
-              try writer.writeAll("'");
-              try stdx.printEscapedString(&.{val.min}, writer);
-              try writer.writeAll("'-'");
-              try stdx.printEscapedString(&.{val.max}, writer);
-              try writer.writeAll("'");
-            },
-            else => unreachable,
-          }
-          try writer.writeAll(";\n");
-        }
+        try writer.writeAll(";\n");
       }
     }
   };
@@ -203,13 +177,19 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
       const node = try Node(Tag).create(allocator, root, 0);
       errdefer node.destroy(allocator);
 
-      var errs = ParseError(Tag).init(allocator, input);
+      var errs = ParseError(Tag).init(allocator);
       defer errs.deinit();
 
-      parseRule(allocator, root, input.text, node, &rules[@intFromEnum(root)], &errs) catch |code| switch (code) {
-        error.ParseError => std.debug.print("{}", .{errs}),
-        else => return code,
+      parseRule(allocator, root, input.text, node, &rules[@intFromEnum(root)], &errs) catch |err| {
+        if (err == error.ParseError) {
+          errs.print(input, std.io.getStdOut().writer()) catch {};
+        }
+        return err;
       };
+      if (node.len != input.text.len) {
+        errs.print(input, std.io.getStdOut().writer()) catch {};
+        return error.ParseError;
+      }
       
       return try Builder.build(allocator, input.text, node);
     }
@@ -228,7 +208,6 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
           const j = node.sub.items.len;
           for (alt) |sub| {
             if (parseRule(allocator, tag, text, node, &sub, errs)) {
-              errs.reset();
               return;
             } else |_| {
               node.restor(allocator, i, j);
@@ -256,7 +235,6 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
           if (count < rep.min) {
             return error.ParseError;
           }
-          errs.reset();
         },
         .str => |str| {
           const pos = node.pos + node.len;
