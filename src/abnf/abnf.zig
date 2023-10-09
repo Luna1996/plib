@@ -211,7 +211,7 @@ fn buildRule(
       rule.* = .{.rep = .{.max = 1, .sub = next}};
     },
     .char_val => {
-      rule.* = .{.str = try allocator.dupe(u8, node.raw(text))};
+      rule.* = .{.str = try allocator.dupe(u8, node.raw(text)[1..node.len-1])};
     },
     .bin_val, .dec_val, .hex_val => {
       const base: u8 = switch (node.tag) {
@@ -220,23 +220,27 @@ fn buildRule(
         .hex_val => 16,
         else => unreachable,
       };
-      if (std.mem.indexOfScalar(u8, node.raw(text), '-')) |hyphen| {
+      const raw = node.raw(text)[2..];
+      if (std.mem.indexOfScalar(u8, raw, '-')) |hyphen| {
         rule.* = .{.val = .{
-          .min = try std.fmt.parseUnsigned(u8, node.raw(text)[0..hyphen], base),
-          .max = try std.fmt.parseUnsigned(u8, node.raw(text)[hyphen + 1..], base),
+          .min = try std.fmt.parseUnsigned(u8, raw[0..hyphen], base),
+          .max = try std.fmt.parseUnsigned(u8, raw[hyphen + 1..], base),
         }};
       } else {
         var buffer = std.ArrayList(u8).init(allocator);
         defer buffer.deinit();
-        var iter = std.mem.tokenizeScalar(u8, node.raw(text), '.');
+        var iter = std.mem.tokenizeScalar(u8, raw, '.');
         while (iter.next()) |token| {
           try buffer.append(try std.fmt.parseUnsigned(u8, token, base));
         }
         rule.* = .{.str = try buffer.toOwnedSlice()};
       }
     },
-    .rulename, .prose_val => {
+    .rulename => {
       rule.* = .{.jmp = name_map.get(node.raw(text)).?};
+    },
+    .prose_val => {
+      rule.* = .{.jmp = name_map.get(node.raw(text)[1..node.len-1]).?};
     },
     else => unreachable,
   }
@@ -245,7 +249,7 @@ fn buildRule(
 pub const Builder = struct {
   pub const root: Tag = .rulelist;
   pub const ignore: []const Tag = &.{
-    .comment,
+    .comment, .group,
     .empty_line, .empty,
     .alpha, .wsp, .crlf,
     .bit, .dec, .hex,
@@ -257,9 +261,6 @@ pub const Builder = struct {
     node: *Node(Tag),
   ) !RuleSet {
     defer node.destroy(allocator);
-    const file = try std.fs.cwd().createFile("output.txt", .{});
-    defer file.close();
-    try node.print(text, 0, file.writer());
     var rule_set = try RuleSet.init(allocator);
     
     var name_map = std.StringHashMap(usize).init(allocator);
@@ -330,5 +331,6 @@ pub fn gen_abnf(allocator: std.mem.Allocator, input_path: []const u8, output_pat
 
 test {
   std.debug.print("\n", .{});
+  // gen_abnf(std.testing.allocator, "src/abnf/abnf.abnf", "src/abnf/abnf.abnf.zig") catch {};
   gen_abnf(std.testing.allocator, "test.abnf", "test.abnf.zig") catch {};
 }

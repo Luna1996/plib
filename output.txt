@@ -1,9 +1,0 @@
-[rulelist]
-  [rule]
-    [rulename]"rulelist"
-    [defined_as]"="
-    [alternation]
-      [concatenation]
-        [repetition]
-          [repeat]"*"
-          [rulename]"empty-line"
