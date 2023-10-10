@@ -4,7 +4,7 @@
     {
       "label": "build",
       "type": "shell",
-      "command": "zig build -- ${relativeFile}",
+      "command": "zig build -Dfile=${relativeFile}",
       "problemMatcher": "$zig",
       "presentation": {
         "echo": true,
@@ -18,7 +18,7 @@
     {
       "label": "build release",
       "type": "shell",
-      "command": "zig build -Doptimize=ReleaseFast -- ${relativeFile}",
+      "command": "zig build -Doptimize=ReleaseFast -Dfile=${relativeFile} --prefix \"./\"",
       "problemMatcher": "$zig",
       "presentation": {
         "echo": true,
@@ -32,8 +32,9 @@
     {
       "label": "build test",
       "type": "shell",
-      "command": "zig build test -- ${relativeFile}",
+      "command": "zig build test -Dfile=${relativeFile}",
       "problemMatcher": "$zig",
+      "options": {"env": {}},
       "presentation": {
         "echo": true,
         "reveal": "silent",
@@ -43,5 +44,5 @@
         "clear": true
       }
     }
-  ]
+  ],
 }

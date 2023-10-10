@@ -3,9 +3,11 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
   const target = b.standardTargetOptions(.{});
   const optimize = b.standardOptimizeOption(.{});
-  if (b.args == null or b.args.?.len == 0) return;
-  const file = b.args.?[0];
-  const base = std.fs.path.basename(b.args.?[0]);
+  const file = b.option([]const u8, "file", "The file to be built.") orelse {
+    std.log.err("Require a .zig file to be built.", .{});
+    return;
+  };
+  const base = std.fs.path.basename(file);
   const opts = .{
     .name = base[0..base.len - 4],
     .root_source_file = .{ .path = file },
@@ -14,8 +16,8 @@ pub fn build(b: *std.Build) void {
     .main_pkg_path = std.Build.LazyPath.relative("src"),
   };
 
-  b.installArtifact(b.addExecutable(opts));
-
+  b.getInstallStep().dependOn(&b.addInstallArtifact(b.addExecutable(opts), .{}).step);
+  
   b.step("test", "build test binary for current module")
     .dependOn(&b.addInstallArtifact(b.addTest(opts), .{}).step);
 }

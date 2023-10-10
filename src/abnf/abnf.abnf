@@ -12,7 +12,7 @@ rule           =  rulename [empty] defined-as [empty] alternation *empty-line
 
 rulename       =  alpha *(alpha / dec / "-")
 
-defined-as     =  "=" / "=/"
+defined-as     =  "=/" / "="
                       ; basic rules definition and
                       ;  incremental alternatives
 
