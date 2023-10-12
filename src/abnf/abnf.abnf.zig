@@ -49,5 +49,5 @@ pub const rules = &.{
   .{.str="\r\n"},
   .{.alt=&.{.{.str="0"},.{.str="1"},}},
   .{.val=.{.min=48,.max=57}},
-  .{.alt=&.{.{.jmp=22},.{.str="A"},.{.str="B"},.{.str="C"},.{.str="D"},.{.str="E"},.{.str="F"},}},
+  .{.alt=&.{.{.jmp=22},.{.val=.{.min=65,.max=70}},.{.val=.{.min=97,.max=102}},}},
 };

@@ -159,7 +159,7 @@ fn Output(comptime Builder: type) type {
   return (error {ParseError} || std.mem.Allocator.Error || BuildError)!OutputType;
 }
 
-pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Allocator, Input) Output(Builder) {
+pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Allocator, Input, ?std.fs.File) Output(Builder) {
   const Tag = Syntax.Tag;
   
   const rules: []const Rule = Syntax.rules;
@@ -173,6 +173,7 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
     fn parse(
       allocator: std.mem.Allocator,
       input: Input,
+      output: ?std.fs.File,
     ) Output(Builder) {
       const node = try Node(Tag).create(allocator, root, 0);
       errdefer node.destroy(allocator);
@@ -189,6 +190,10 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
       if (node.len != input.text.len) {
         errs.print(input, std.io.getStdOut().writer()) catch {};
         return error.ParseError;
+      }
+
+      if (output) |file| {
+        node.print(input.text, 0, file.writer()) catch {};
       }
       
       return try Builder.build(allocator, input.text, node);
