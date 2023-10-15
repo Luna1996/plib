@@ -1,12 +1,12 @@
-; Equivalent to the syntax defined in
+; Equivalent to the syntax defined in:
 ; https://www.rfc-editor.org/rfc/rfc5234#section-4
-; with several QoL improvement:
-; 1. Allow not end with '\n'.
-; 2. Change terminal boundary for easier parse.
+; with several QoL improvement.
 
-rulelist       =  *empty-line 1*rule
+rulelist       =  expression *(crlf expression)
 
-rule           =  rulename [empty] defined-as [empty] alternation *empty-line
+expression     =  rule / *wsp [comment]
+
+rule           =  rulename [empty] defined-as [empty] alternation *wsp [comment]
                       ; continues if next line starts
                       ;  with white space
 
@@ -65,7 +65,7 @@ alpha          =  %x41-5A / %x61-7A   ; A-Z / a-z
 wsp            =  %x20 / %x09
                       ; white space
 
-crlf           =  %x0D.0A
+crlf           =  %x0D.0A / %x0A
                       ; Internet standard newline
 
 bit            =  "0" / "1"

@@ -253,6 +253,7 @@ fn buildRule(
 pub const Builder = struct {
   pub const root: Tag = .rulelist;
   pub const ignore: []const Tag = &.{
+    .expression,
     .comment, .group,
     .empty_line, .empty,
     .alpha, .wsp, .crlf,
