@@ -11,8 +11,8 @@ const Rule = union(enum) {
   },
   str: []const u8,
   val: struct {
-    min: u8,
-    max: u8
+    min: u21,
+    max: u21,
   },
   jmp: usize,
 };
@@ -34,8 +34,9 @@ pub fn Node(comptime Tag: type) type {
       return node;
     }
 
-    pub fn destroy(self: *const Self, allocator: std.mem.Allocator) void {
-      for (self.sub.items) |sub| sub.destroy(allocator);
+    pub fn destroy(self: *const Self) void {
+      const allocator = self.sub.allocator;
+      for (self.sub.items) |sub| sub.destroy();
       self.sub.deinit();
       allocator.destroy(self);
     }
@@ -48,12 +49,12 @@ pub fn Node(comptime Tag: type) type {
       return text[self.pos..self.pos + self.len];
     }
 
-    fn restor(self: *Self, allocator: std.mem.Allocator,  i: usize, j: usize) void {
+    fn restor(self: *Self, i: usize, j: usize) void {
       self.len = i;
       for (self.sub.items[j..]) |sub| {
-        sub.destroy(allocator);
+        sub.destroy();
       }
-      self.sub.shrinkAndFree(j);
+      self.sub.items.len = j;
     }
 
     pub fn print(
@@ -133,11 +134,7 @@ fn ParseError(comptime Tag: type) type {
             try stdx.printEscapedStringWithQuotes(str, writer);
           },
           .val => |val| {
-            try writer.writeAll("'");
-            try stdx.printEscapedString(&.{val.min}, writer);
-            try writer.writeAll("'-'");
-            try stdx.printEscapedString(&.{val.max}, writer);
-            try writer.writeAll("'");
+            try writer.print("0x{X}-{X}", .{val.min, val.max});
           },
           else => unreachable,
         }
@@ -176,12 +173,12 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
       output: ?std.fs.File,
     ) Output(Builder) {
       const node = try Node(Tag).create(allocator, root, 0);
-      errdefer node.destroy(allocator);
+      defer node.destroy();
 
       var errs = ParseError(Tag).init(allocator);
       defer errs.deinit();
 
-      parseRule(allocator, root, input.text, node, &rules[@intFromEnum(root)], &errs) catch |err| {
+      parseRule(root, input.text, node, &rules[@intFromEnum(root)], &errs) catch |err| {
         if (err == error.ParseError) {
           errs.print(input, std.io.getStdOut().writer()) catch {};
         }
@@ -200,7 +197,6 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
     }
 
     fn parseRule(
-      allocator: std.mem.Allocator,
       tag: Tag,
       text: []const u8,
       node: *Node(Tag),
@@ -212,17 +208,17 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
           const i = node.len;
           const j = node.sub.items.len;
           for (alt) |sub| {
-            if (parseRule(allocator, tag, text, node, &sub, errs)) {
+            if (parseRule(tag, text, node, &sub, errs)) {
               return;
             } else |_| {
-              node.restor(allocator, i, j);
+              node.restor(i, j);
             }
           }
           return error.ParseError;
         },
         .con => |con| {
           for (con) |sub| {
-            try parseRule(allocator, tag, text, node, &sub, errs);
+            try parseRule(tag, text, node, &sub, errs);
           }
         },
         .rep => |rep| {
@@ -230,10 +226,10 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
           while ((rep.max == null or count < rep.max.?) and node.pos + node.len < text.len) {
             const i = node.len;
             const j = node.sub.items.len;
-            if (parseRule(allocator, tag, text, node, rep.sub, errs)) {
+            if (parseRule(tag, text, node, rep.sub, errs)) {
               count += 1;
             } else |_| {
-              node.restor(allocator, i, j);
+              node.restor(i, j);
               break;
             }
           }
@@ -252,10 +248,17 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
         },
         .val => |val| {
           const pos = node.pos + node.len;
-          if (text.len <= pos) return error.ParseError;
-          const next_char = text[pos];
+          if (text.len <= pos) {
+            try errs.put(pos, tag, rule.*);
+            return error.ParseError;
+          }
+          var iter = std.unicode.Utf8Iterator{.bytes = text[pos..], .i = 0};
+          const next_char = iter.nextCodepoint() orelse {
+            try errs.put(pos, tag, rule.*);
+            return error.ParseError;
+          };
           if (val.min <= next_char and next_char <= val.max) {
-            node.len += 1;
+            node.len += iter.i;
           } else {
             try errs.put(pos, tag, rule.*);
             return error.ParseError;
@@ -264,13 +267,13 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
         .jmp => |jmp| {
           if (flag[jmp]) {
             const new_tag = @as(Tag, @enumFromInt(jmp));
-            var new_node = try Node(Tag).create(allocator, new_tag, node.pos + node.len);
-            errdefer new_node.destroy(allocator);
-            try parseRule(allocator, new_tag, text, new_node, &rules[jmp], errs);
+            var new_node = try Node(Tag).create(node.sub.allocator, new_tag, node.pos + node.len);
+            errdefer new_node.destroy();
+            try parseRule(new_tag, text, new_node, &rules[jmp], errs);
             try node.sub.append(new_node);
             node.len += new_node.len;
           } else {
-            try parseRule(allocator, tag, text, node, &rules[jmp], errs);
+            try parseRule(tag, text, node, &rules[jmp], errs);
           }
         },
       }

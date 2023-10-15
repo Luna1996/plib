@@ -19,8 +19,8 @@ const Rule = union(enum) {
   },
   str: []u8,
   val: struct {
-    min: u8,
-    max: u8
+    min: u21,
+    max: u21
   },
   jmp: usize,
 
@@ -223,17 +223,21 @@ fn buildRule(
       const raw = node.raw(text)[2..];
       if (std.mem.indexOfScalar(u8, raw, '-')) |hyphen| {
         rule.* = .{.val = .{
-          .min = try std.fmt.parseUnsigned(u8, raw[0..hyphen], base),
-          .max = try std.fmt.parseUnsigned(u8, raw[hyphen + 1..], base),
+          .min = try std.fmt.parseUnsigned(u21, raw[0..hyphen], base),
+          .max = try std.fmt.parseUnsigned(u21, raw[hyphen + 1..], base),
         }};
       } else {
         var buffer = std.ArrayList(u8).init(allocator);
-        defer buffer.deinit();
+        errdefer buffer.deinit();
         var iter = std.mem.tokenizeScalar(u8, raw, '.');
+        var cp_buffer: [4]u8 = undefined;
         while (iter.next()) |token| {
-          try buffer.append(try std.fmt.parseUnsigned(u8, token, base));
+          const cp = try std.fmt.parseUnsigned(u21, token, base);
+          const cp_len = try std.unicode.utf8Encode(cp, &cp_buffer);
+          try buffer.appendSlice(cp_buffer[0..cp_len]);
         }
-        rule.* = .{.str = try buffer.toOwnedSlice()};
+        buffer.shrinkAndFree(buffer.items.len);
+        rule.* = .{.str = buffer.items};
       }
     },
     .rulename => {
@@ -260,7 +264,6 @@ pub const Builder = struct {
     text: []const u8,
     node: *Node(Tag),
   ) !RuleSet {
-    defer node.destroy(allocator);
     var rule_set = try RuleSet.init(allocator);
     
     var name_map = std.StringHashMap(usize).init(allocator);
@@ -272,9 +275,9 @@ pub const Builder = struct {
       const rulename = item.get(0).raw(text);
       if (name_map.get(rulename)) |i| {
         var last = node_map.items[i];
-        const more = item.get(2).sub;
+        var more = &item.get(2).sub;
         try last.sub.appendSlice(more.items);
-        more.deinit();
+        more.clearAndFree();
       } else {
         try name_map.putNoClobber(rulename, name_map.count());
         var dupe = try allocator.dupe(u8, rulename);

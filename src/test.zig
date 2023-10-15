@@ -1,5 +1,5 @@
+const std = @import("std");
+
 test {
-  var b: usize = 0;
-  const a = 1 / b;
-  _ = a;
+  std.debug.print("😁", .{});
 }
