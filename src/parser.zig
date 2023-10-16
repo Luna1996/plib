@@ -80,69 +80,64 @@ pub fn Node(comptime Tag: type) type {
   };
 }
 
-fn ParseError(comptime Tag: type) type {
-  return struct {
-    const Self = @This();
-    const Record = struct{
-      tag: Tag,
-      rule: Rule,
-    };
-
-    pos: usize,
-    records: std.ArrayList(Record),
-
-    fn init(allocator: std.mem.Allocator) Self {
-      return .{.pos = 0, .records = std.ArrayList(Record).init(allocator)};
-    }
-
-    fn deinit(self: *Self) void {
-      self.records.deinit();
-    }
-
-    fn put(self: *Self, pos: usize, tag: Tag, rule: Rule) !void {
-      if (pos < self.pos) return;
-      if (pos > self.pos) {
-        try self.records.resize(0);
-        self.pos = pos;
-      }
-      try self.records.append(.{.tag = tag, .rule = rule});
-    }
-
-    fn print(
-      self: *const Self,
-      input: Input,
-      writer: anytype,
-    ) !void {
-      if (self.records.items.len == 0) return;
-      try writer.writeAll("Encounter ParseError!\n");
-      const path = input.path orelse "(unknown)";
-      var line = std.mem.count(u8, input.text[0..self.pos], "\n") + 1;
-      var line_start = if (std.mem.lastIndexOfScalar(u8, input.text[0..self.pos], '\n')) |start| start + 1 else 0;
-      var line_end = std.mem.indexOfScalarPos(u8, input.text, self.pos, '\n') orelse input.text.len;
-      try writer.writeAll(path);
-      try writer.print(":{d}:{d}\n", .{line, self.pos - line_start + 1});
-      try writer.writeAll(input.text[line_start..line_end]);
-      try writer.writeAll("\n");
-      try writer.writeByteNTimes(' ', self.pos - line_start);
-      try writer.writeAll("^\n");
-      for (self.records.items) |item| {
-        try writer.writeAll("  <");
-        try writer.writeAll(@tagName(item.tag));
-        try writer.writeAll("> expecting ");
-        switch (item.rule) {
-          .str => |str| {
-            try stdx.printEscapedStringWithQuotes(str, writer);
-          },
-          .val => |val| {
-            try writer.print("0x{X}-{X}", .{val.min, val.max});
-          },
-          else => unreachable,
-        }
-        try writer.writeAll(";\n");
-      }
-    }
+pub const ParseError = struct {
+  const Self = @This();
+  const Record = struct{
+    tag: []const u8,
+    rule: Rule,
   };
-}
+
+  pos: usize,
+  records: std.ArrayList(Rule),
+
+  fn init(allocator: std.mem.Allocator) Self {
+    return .{.pos = 0, .records = std.ArrayList(Record).init(allocator)};
+  }
+
+  fn deinit(self: *Self) void {
+    self.records.deinit();
+  }
+
+  fn put(self: *Self, pos: usize, tag: []const u8, rule: Rule) !void {
+    if (pos < self.pos) return;
+    if (pos > self.pos) {
+      try self.records.resize(0);
+      self.pos = pos;
+    }
+    try self.records.append(.{.tag = tag, .rule = rule});
+  }
+
+  fn print(
+    self: *const Self,
+    input: Input,
+    writer: anytype,
+  ) !void {
+    if (self.records.items.len == 0) return;
+    const path = input.path orelse "(unknown)";
+    var line = std.mem.count(u8, input.text[0..self.pos], "\n") + 1;
+    var line_start = if (std.mem.lastIndexOfScalar(u8, input.text[0..self.pos], '\n')) |start| start + 1 else 0;
+    var line_end = std.mem.indexOfScalarPos(u8, input.text, self.pos, '\n') orelse input.text.len;
+    try writer.print("Encounter ParseError!\n{s}:{d}:{d}\n{s}\n", .{
+      path, line, self.pos - line_start + 1,
+      input.text[line_start..line_end],
+    });
+    try writer.writeByteNTimes(' ', self.pos - line_start);
+    try writer.writeAll("^\n");
+    for (self.records.items) |item| {
+      try writer.print("  <{s}> expecting ", .{item.tag});
+      switch (item.rule) {
+        .str => |str| {
+          try stdx.printEscapedStringWithQuotes(str, writer);
+        },
+        .val => |val| {
+          try writer.print("0x{X}-{X}", .{val.min, val.max});
+        },
+        else => unreachable,
+      }
+      try writer.writeAll(";\n");
+    }
+  }
+};
 
 pub const Input = struct {
   path: ?[]const u8,
@@ -179,7 +174,7 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
       const node = try Node(Tag).create(allocator, root, 0);
       defer node.destroy();
 
-      var errs = ParseError(Tag).init(allocator);
+      var errs = ParseError.init(allocator);
       defer errs.deinit();
 
       parseRule(root, input.text, node, &rules[@intFromEnum(root)], &errs) catch |err| {
@@ -205,7 +200,7 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
       text: []const u8,
       node: *Node(Tag),
       rule: *const Rule,
-      errs: *ParseError(Tag),
+      errs: *ParseError,
     ) !void {
       switch (rule.*) {
         .alt => |alt| {
@@ -246,25 +241,25 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
           if (std.mem.startsWith(u8, text[pos..], str)) {
             node.len += str.len;
           } else {
-            try errs.put(pos, tag, rule.*);
+            try errs.put(pos, @tagName(tag), rule.*);
             return error.ParseError;
           }
         },
         .val => |val| {
           const pos = node.pos + node.len;
           if (text.len <= pos) {
-            try errs.put(pos, tag, rule.*);
+            try errs.put(pos, @tagName(tag), rule.*);
             return error.ParseError;
           }
           var iter = std.unicode.Utf8Iterator{.bytes = text[pos..], .i = 0};
           const next_char = iter.nextCodepoint() orelse {
-            try errs.put(pos, tag, rule.*);
+            try errs.put(pos, @tagName(tag), rule.*);
             return error.ParseError;
           };
           if (val.min <= next_char and next_char <= val.max) {
             node.len += iter.i;
           } else {
-            try errs.put(pos, tag, rule.*);
+            try errs.put(pos, @tagName(tag), rule.*);
             return error.ParseError;
           }
         },
