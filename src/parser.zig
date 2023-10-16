@@ -161,10 +161,14 @@ pub fn createParser(comptime Syntax: type, comptime Builder: type) fn(std.mem.Al
   
   const rules: []const Rule = Syntax.rules;
   
-  const root = Builder.root;
+  const root: Tag = if (@hasDecl(Builder, "root")) Builder.root else @enumFromInt(0);
 
   comptime var flag = [_]bool{true} ** std.meta.fields(Tag).len;
-  for (Builder.ignore) |tag| { flag[@intFromEnum(tag)] = false; }
+  if (@hasDecl(Builder, "ignore")) {
+    for (Builder.ignore) |tag| {
+      flag[@intFromEnum(tag)] = false;
+    }
+  }
 
   const Clojure = struct {
     fn parse(
