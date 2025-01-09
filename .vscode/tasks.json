@@ -2,39 +2,10 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "build",
-      "type": "shell",
-      "command": "zig build -Dfile=${relativeFile}",
-      "problemMatcher": "$zig",
-      "presentation": {
-        "echo": true,
-        "reveal": "silent",
-        "focus": false,
-        "panel": "shared",
-        "showReuseMessage": true,
-        "clear": true
-      },
-    },
-    {
-      "label": "build release",
-      "type": "shell",
-      "command": "zig build -Doptimize=ReleaseFast -Dfile=${relativeFile} --prefix \"./\"",
-      "problemMatcher": "$zig",
-      "presentation": {
-        "echo": true,
-        "reveal": "silent",
-        "focus": false,
-        "panel": "shared",
-        "showReuseMessage": true,
-        "clear": true
-      },
-    },
-    {
       "label": "build test",
       "type": "shell",
-      "command": "zig build test -Dfile=${relativeFile}",
-      "problemMatcher": "$zig",
-      "options": {"env": {}},
+      "command": "zig build test",
+      // "problemMatcher": "$zig",
       "presentation": {
         "echo": true,
         "reveal": "silent",
@@ -42,6 +13,10 @@
         "panel": "shared",
         "showReuseMessage": true,
         "clear": true
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
       }
     }
   ],
