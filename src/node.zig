@@ -9,6 +9,20 @@ pub const Node = struct {
     sub: std.ArrayList(Self),
   },
 
+  pub fn initSub(allocator: std.mem.Allocator, tag: ?usize) Node {
+    return .{
+      .tag = tag,
+      .val = .{ .sub = std.ArrayList(Self).init(allocator) },
+    };
+  }
+
+  pub fn initStr(str: []const u8) Node {
+    return .{
+      .tag = null,
+      .val = .{ .str = str },
+    };
+  }
+
   pub fn deinit(self: Self) void {
     switch (self.val) {
       .str => {},

@@ -1,15 +1,22 @@
 pub const Rule = union(enum) {
-  alt: []const Rule,
-  con: []const Rule,
-  rep: struct {
+  alt: Alt,
+  con: Con,
+  rep: Rep,
+  str: Str,
+  val: Val,
+  jmp: Jmp,
+
+  pub const Alt = []const Rule;
+  pub const Con = []const Rule;
+  pub const Rep = struct {
     min: u8 = 0,
     max: ?u8 = null,
-    sub: *const Rule,
-  },
-  str: []const u8,
-  val: struct {
+    sub: Rule,
+  };
+  pub const Str = []const u8;
+  pub const Val = struct {
     min: u21,
     max: u21,
-  },
-  jmp: usize,
+  };
+  pub const Jmp = usize;
 };
