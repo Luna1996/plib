@@ -1,3 +1,5 @@
+const Rule = @import("rule.zig").Rule;
+
 pub const Tag = enum {
   rulelist,
   expression,
@@ -26,7 +28,7 @@ pub const Tag = enum {
   hex,
 };
 
-pub const rules = &.{
+pub const rules: []const Rule = &.{
   .{.con=&.{.{.jmp=1},.{.rep=.{.sub=&.{.con=&.{.{.jmp=21},.{.jmp=1},}}}},}},
   .{.alt=&.{.{.jmp=2},.{.con=&.{.{.rep=.{.sub=&.{.jmp=20}}},.{.rep=.{.max=1,.sub=&.{.jmp=18}}},}},}},
   .{.con=&.{.{.jmp=3},.{.rep=.{.max=1,.sub=&.{.jmp=17}}},.{.jmp=4},.{.rep=.{.max=1,.sub=&.{.jmp=17}}},.{.jmp=5},.{.rep=.{.sub=&.{.jmp=20}}},.{.rep=.{.max=1,.sub=&.{.jmp=18}}},}},

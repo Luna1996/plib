@@ -5,7 +5,7 @@
       "label": "build test",
       "type": "shell",
       "command": "zig build test",
-      // "problemMatcher": "$zig",
+      "problemMatcher": "$zig",
       "presentation": {
         "echo": true,
         "reveal": "silent",

@@ -11,7 +11,7 @@ pub const Rule = union(enum) {
   pub const Rep = struct {
     min: u8 = 0,
     max: ?u8 = null,
-    sub: Rule,
+    sub: *const Rule,
   };
   pub const Str = []const u8;
   pub const Val = struct {
