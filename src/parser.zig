@@ -20,21 +20,15 @@ pub fn gen_parser(comptime abnf: type, comptime keep: []const abnf.Tag) Parser(a
     
     fn reset(self: *Self, old_ctx: *const Self, old_len: usize) void {
       self.* = old_ctx.*;
-      switch (self.node.val) {
-        .str => unreachable,
-        .sub => |*sub| if (sub.items.len > old_len) {
-          for (old_len..sub.items.len) |i|
-            sub.items[i].deinit();
-          sub.shrinkAndFree(old_len);
-        },
-      }
+      self.node.reset(old_len);
     }
 
-    fn appendStr(self: Self, input: []const u8) std.mem.Allocator.Error!void {
+    fn appendStr(self: *Self, input: []const u8) std.mem.Allocator.Error!void {
       switch (self.node.val) {
         .str => unreachable,
         .sub => |*sub| if (self.keep_pos < self.init_pos) {
           try sub.append(Node(Tag).initStr(input[self.keep_pos..self.init_pos]));
+          self.keep_pos = self.init_pos;
         },
       }
     }
@@ -124,17 +118,16 @@ pub fn gen_parser(comptime abnf: type, comptime keep: []const abnf.Tag) Parser(a
 
     fn parseRuleJmp(self: *Self, jmp: Rule.Jmp, ctx: *ParseContext) ParserError!void {
       if (bitset.isSet(jmp)) {
-        const old_ctx = ctx.*;
+        try ctx.appendStr(self.input);
+        var old_ctx = ctx.*;
         var node = Node(Tag).initSub(self.allocator, @enumFromInt(jmp));
         errdefer node.deinit();
         ctx.node = &node;
-        ctx.keep_pos = ctx.init_pos;
         try self.parseRule(rules[jmp], ctx);
-        try old_ctx.appendStr(self.input);
+        try ctx.appendStr(self.input);
         try old_ctx.node.val.sub.append(node);
         ctx.node = old_ctx.node;
         try ctx.appendStr(self.input);
-        ctx.keep_pos = ctx.init_pos;
       } else {
         try self.parseRule(rules[jmp], ctx);
       }
