@@ -61,6 +61,7 @@ pub fn Node(comptime Tag: type) type {
       options: std.fmt.FormatOptions,
       writer: anytype,
     ) !void {
+      if (fmt.len != 0 and self.tag == null) return;
       const deep = options.width orelse 0;
       if (deep > 0) try writer.writeByteNTimes(' ', deep * 2);
       try writer.writeAll(if (self.tag) |tag| @tagName(tag) else "[null]");

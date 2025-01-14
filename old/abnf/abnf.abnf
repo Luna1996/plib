@@ -30,7 +30,7 @@ repetition     =  [repeat] (
                     hex-val /
                     prose-val)
 
-repeat         =  (*dec "*" *dec) / 1*dec
+repeat         =  *dec "*" *dec
 
 option         =  "[" [empty] alternation [empty] "]"
 
@@ -47,12 +47,6 @@ bin-val        =  "%b" 1*bit [ 1*("." 1*bit) / ("-" 1*bit) ]
 dec-val        =  "%d" 1*dec [ 1*("." 1*dec) / ("-" 1*dec) ]
 
 hex-val        =  "%x" 1*hex [ 1*("." 1*hex) / ("-" 1*hex) ]
-
-prose-val      =  "<" *(%x20-3D / %x3F-7E) ">"
-                      ; bracketed string of SP and VCHAR
-                      ;  without angles
-                      ; prose description, to be used as
-                      ;  last resort
 
 empty-line     =  *wsp [comment] crlf
 
@@ -73,4 +67,4 @@ bit            =  "0" / "1"
 dec            =  %x30-39
                       ; 0-9
 
-hex            =  dec / %x41-46 / %x61-66
+hex            =  %x30-39 / %x41-46 / %x61-66

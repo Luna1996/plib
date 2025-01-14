@@ -75,7 +75,6 @@ pub fn gen_parser(comptime abnf: type, comptime keep: []const abnf.Tag) Parser(a
         .val => |val| try self.parseRuleVal(val, ctx),
         .jmp => |jmp| try self.parseRuleJmp(jmp, ctx),
       }
-      ctx.shrinkTrivial();
     }
 
     fn parseRuleAlt(self: *Self, alt: Rule.Alt, ctx: *ParseContext) ParserError!void {
@@ -119,15 +118,15 @@ pub fn gen_parser(comptime abnf: type, comptime keep: []const abnf.Tag) Parser(a
     fn parseRuleJmp(self: *Self, jmp: Rule.Jmp, ctx: *ParseContext) ParserError!void {
       if (bitset.isSet(jmp)) {
         try ctx.appendStr(self.input);
-        var old_ctx = ctx.*;
+        const old_node = ctx.node;
         var node = Node(Tag).initSub(self.allocator, @enumFromInt(jmp));
         errdefer node.deinit();
         ctx.node = &node;
         try self.parseRule(rules[jmp], ctx);
         try ctx.appendStr(self.input);
-        try old_ctx.node.val.sub.append(node);
-        ctx.node = old_ctx.node;
-        try ctx.appendStr(self.input);
+        ctx.shrinkTrivial();
+        try old_node.val.sub.append(node);
+        ctx.node = old_node;
       } else {
         try self.parseRule(rules[jmp], ctx);
       }
