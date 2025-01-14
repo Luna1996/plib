@@ -1,13 +1,14 @@
 const std = @import("std");
+const ABNF = @import("abnf.zig").ABNF;
 const Rule = @import("rule.zig").Rule;
 const Node = @import("node.zig").Node;
 
-pub fn gen_parser(comptime abnf: type, comptime keep: []const abnf.Tag) Parser(abnf.Tag) {
-  const Tag: type = abnf.Tag;
+pub fn gen_parser(comptime abnf: ABNF, comptime keep: []const abnf.Tag()) Parser(abnf.Tag()) {
+  const Tag: type = abnf.Tag();
   const rules: []const Rule = abnf.rules;
   const bitset = bitset: {
-    comptime var bitset = std.bit_set.StaticBitSet(std.meta.fields(Tag).len).initEmpty();
-    inline for (keep) |tag| bitset.set(@intFromEnum(tag));
+    comptime var bitset = std.enums.EnumSet(Tag).initEmpty();
+    inline for (keep) |tag| bitset.setPresent(tag, true);
     break :bitset bitset;
   };
 
@@ -116,7 +117,7 @@ pub fn gen_parser(comptime abnf: type, comptime keep: []const abnf.Tag) Parser(a
     }
 
     fn parseRuleJmp(self: *Self, jmp: Rule.Jmp, ctx: *ParseContext) ParserError!void {
-      if (bitset.isSet(jmp)) {
+      if (bitset.contains(@enumFromInt(jmp))) {
         try ctx.appendStr(self.input);
         const old_node = ctx.node;
         var node = Node(Tag).initSub(self.allocator, @enumFromInt(jmp));
