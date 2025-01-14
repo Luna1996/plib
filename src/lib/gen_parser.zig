@@ -1,10 +1,10 @@
 const std = @import("std");
-const ABNF = @import("abnf.zig").ABNF;
+const ABNF = @import("abnf").ABNF;
 const Rule = @import("rule.zig").Rule;
 const Node = @import("node.zig").Node;
 
-pub fn gen_parser(comptime abnf: ABNF, comptime keep: []const abnf.Tag()) Parser(abnf.Tag()) {
-  const Tag: type = abnf.Tag();
+pub fn gen_parser(comptime abnf: ABNF, comptime keep: []const abnf.toTag()) Parser(abnf.toTag()) {
+  const Tag: type = abnf.toTag();
   const rules: []const Rule = abnf.rules;
   const bitset = bitset: {
     comptime var bitset = std.enums.EnumSet(Tag).initEmpty();
