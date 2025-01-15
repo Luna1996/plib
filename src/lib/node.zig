@@ -55,6 +55,31 @@ pub fn Node(comptime Tag: type) type {
       }
     }
 
+    pub fn subLen(self: Self) usize {
+      return self.val.sub.items.len;
+    }
+
+    pub fn get(self: Self, i: usize) *Self {
+      return &self.val.sub.items[i];
+    }
+
+    pub fn getStr(self: Self, i: usize) []const u8 {
+      return self.val.sub.items[i].val.str;
+    }
+
+    pub fn add(self: *Self, i: usize, item: Self) !void {
+      try self.val.sub.insert(i, item);
+    }
+
+    pub fn del(self: *Self, i: usize) Self {
+      return self.val.sub.orderedRemove(i);
+    }
+
+    pub fn appendSub(self: *Self, item: *Self) !void {
+      try self.val.sub.appendSlice(item.val.sub.items);
+      item.val.sub.clearAndFree();
+    }
+
     pub fn format(
       self: Self, 
       comptime fmt: []const u8,

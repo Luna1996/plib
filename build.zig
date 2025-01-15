@@ -12,14 +12,19 @@ pub fn build(b: *std.Build) !void {
 
   try addMods(b);
 
-  plib_mod.addImport("abnf", b.modules.get("abnf").?);
+  const main_mod = b.createModule(.{
+    .target = target,
+    .optimize = optimize,
+    .root_source_file = b.path("src/exe/main.zig"),
+  });
+  main_mod.addImport("plib", plib_mod);
+  main_mod.addImport("abnf", b.modules.get("abnf").?);
 
   const test_exe = b.addTest(.{
     .target = target,
     .optimize = optimize,
-    .root_module = plib_mod,
+    .root_module = main_mod,
   });
-
 
   const test_step = b.step("test", "test full library");
   test_step.dependOn(&b.addInstallArtifact(test_exe, .{}).step);
@@ -31,7 +36,7 @@ pub fn build(b: *std.Build) !void {
       .name = "gen",
       .target = target,
       .optimize = optimize,
-      .root_module = plib_mod,
+      .root_module = main_mod,
     }));
     gen_run.setCwd(b.path("."));
     gen_run.addArg(gen_name);
@@ -43,12 +48,11 @@ pub fn build(b: *std.Build) !void {
 }
 
 fn addMods(b: *std.Build) !void {
-  try addMod(b, "abnf.zig");
   var gen_dir = try b.build_root.handle.openDir("src/mod", .{ .iterate = true });
   defer gen_dir.close();
   var iter = gen_dir.iterate();
   while (try iter.next()) |entry| switch (entry.kind) {
-    .file => if (!std.mem.eql(u8, "abnf.zig", entry.name)) try addMod(b, entry.name),
+    .file => try addMod(b, entry.name),
     else => {},
   };
 }
@@ -76,7 +80,7 @@ fn addMod(b: *std.Build, file_name: []const u8) !void {
     .optimize = optimize,
     .root_source_file = b.path(gen_path),
   });
-  gen_mod.addImport("abnf", b.modules.get("abnf").?);
+  gen_mod.addImport("plib", plib_mod);
   mod_mod.addImport(gen_name, gen_mod);
   mod_mod.addImport("plib", plib_mod);
 }

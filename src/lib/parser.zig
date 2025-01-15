@@ -1,6 +1,6 @@
 const std = @import("std");
-const ABNF = @import("abnf").ABNF;
-const Rule = @import("rule.zig").Rule;
+const ABNF = @import("abnf.zig").ABNF;
+const Rule = @import("abnf.zig").Rule;
 
 pub fn Parser(comptime abnf: ABNF) type {
   return struct {

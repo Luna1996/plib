@@ -1,11 +1,6 @@
-pub const Rule = union(enum) {
-  alt: Alt,
-  con: Con,
-  rep: Rep,
-  str: Str,
-  val: Val,
-  jmp: Jmp,
+const std = @import("std");
 
+pub const Rule = union(enum) {
   pub const Alt = []const Rule;
   pub const Con = []const Rule;
   pub const Rep = struct {
@@ -19,4 +14,16 @@ pub const Rule = union(enum) {
     max: u21,
   };
   pub const Jmp = usize;
+
+  alt: Alt,
+  con: Con,
+  rep: Rep,
+  str: Str,
+  val: Val,
+  jmp: Jmp,
+};
+
+pub const ABNF = struct {
+  names: []const [:0]const u8,
+  rules: []const Rule,
 };

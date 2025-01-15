@@ -1,4 +1,4 @@
-pub const abnf = @import("abnf").ABNF {
+pub const abnf = @import("plib").ABNF {
   .names = &.{
     "rulelist",
     "expression",
