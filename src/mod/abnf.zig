@@ -2,36 +2,46 @@ const std = @import("std");
 const abnf = @import("gen.abnf").abnf;
 const plib = @import("plib");
 const Rule = plib.Rule;
+const Parser = plib.Parser(abnf);
+const Tag = Parser.Tag;
+const Node = Parser.Node;
 
 pub const ABNF = struct {
   const Self = @This();
-  const Tag: type = abnf.toTag();
-  const Node = plib.Node(Tag);
-  const keep = [_]Tag {
-    .rulelist, .comment, .rule, .rulename, .defined_as,
-    .alternation, .concatenation, .repetition, .option,
-    .repeat, .char_val, .bin_val, .dec_val, .hex_val,
-  };
 
   names: []const [:0]const u8,
   rules: []const Rule,
 
-  pub fn toTag(comptime self: Self) type {
-    comptime var fields: [self.names.len]std.builtin.Type.EnumField = undefined;
-    inline for (&fields, self.names, 0..) |*field, name, i| field.* = .{ .name = name, .value = i };
-    return @Type(.{.@"enum" = .{
-      .tag_type = std.math.Log2Int(std.meta.Int(.unsigned, self.names.len)),
-      .decls = &.{},
-      .fields = &fields,
-      .is_exhaustive = true,
-    }});
+  pub fn parse(conf: struct {
+    allocator: std.mem.Allocator,
+    file_path: ?[]const u8 = null,
+    input: []const u8,
+  }) !ABNF {
+    var result = try Parser.parse(.{
+      .allocator = conf.allocator,
+      .input = conf.input,
+      .keeps = &.{
+        .rulelist, .rule, .rulename, .defined_as,
+        .alternation, .concatenation, .repetition, .option,
+        .repeat, .char_val, .bin_val, .dec_val, .hex_val,
+      },
+      .file_path = conf.file_path,
+    });
+    defer result.root.deinit();
+    if (result.fail) |fail| {
+      std.debug.print("{}", .{fail});
+    } else {
+      std.debug.print("{}", .{result.root});
+    }
+    return undefined;
   }
 
-  pub fn parse(allocator: std.mem.Allocator, input: []const u8) !void {
-    var root = try plib.gen_parser(abnf, &keep)(allocator, input);
-    defer root.deinit();
-    std.debug.print("{}", .{root});
-  }
+
+};
+
+const ParseContex = struct {
+  allocator: std.mem.Allocator,
+  names_map: std.StringHashMapUnmanaged(usize),
 };
 
 pub fn main() !void {}
