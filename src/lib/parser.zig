@@ -96,6 +96,7 @@ pub fn Parser(comptime abnf: ABNF) type {
         .cur_node = &root,
         .keep_null = conf.keep_null,
       };
+      for (conf.keeps) |tag| self.keeps.setPresent(tag, true);
       self.parseRule(rules[@intFromEnum(conf.root_rule)]) catch |e|
         if (e != error.ParseError) return AllocError.OutOfMemory;
       try self.appendStr(true);
@@ -111,10 +112,12 @@ pub fn Parser(comptime abnf: ABNF) type {
     }
 
     fn parseRule(self: *Self, rule: Rule) ParseError!void {
+      const old_node = self.cur_node;
       const old_len = self.cur_node.val.sub.items.len;
       const old_init_pos = self.init_pos;
       const old_keep_pos = self.keep_pos;
       errdefer {
+        self.cur_node = old_node;
         self.cur_node.reset(old_len);
         self.init_pos = old_init_pos;
         self.keep_pos = old_keep_pos;
