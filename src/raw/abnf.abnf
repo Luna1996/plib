@@ -20,15 +20,14 @@ alternation    =  concatenation *([empty] "/" [empty] concatenation)
 
 concatenation  =  repetition *(empty repetition)
 
-repetition     =  [repeat] (
+repetition     =  option /
+                  [repeat] (
                     rulename /
-                    option /
                     group /
                     char-val /
                     bin-val /
                     dec-val /
-                    hex-val /
-                    prose-val)
+                    hex-val)
 
 repeat         =  *dec "*" *dec
 

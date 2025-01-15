@@ -8,6 +8,8 @@ const Node = Parser.Node;
 pub const ABNF = struct {
   const Self = @This();
 
+  const Error = std.mem.Allocator.Error;
+
   const Conf = struct {
     allocator: std.mem.Allocator,
     file_path: ?[]const u8 = null,
@@ -82,17 +84,99 @@ pub const ABNF = struct {
 
     std.debug.print("{}", .{root});
 
-    for (root.val.sub.items) |item| {
-      const rule = try self.buildRule(item);
-      errdefer rule.deinit(self.allocator);
-      try self.rules.append(rule);
+    try self.rules.ensureTotalCapacityPrecise(id);
+    for (root.val.sub.items) |*item|
+      try self.rules.append(try self.buildAlt(item.get(1)));
+  }
+
+  fn buildAlt(self: Self, node: *Node) Error!Rule {
+    const sub_len = node.subLen();
+    if (sub_len == 1) return try self.buildCon(node);
+    var lst = try std.ArrayList(Rule).initCapacity(self.allocator, sub_len);
+    for (node.val.sub.items) |*item|
+      lst.appendAssumeCapacity(try self.buildCon(item));
+    return .{.alt = lst};
+  }
+
+  fn buildCon(self: Self, node: *Node) Error!Rule {
+    const sub_len = node.subLen();
+    if (sub_len == 1) return try self.buildRep(node);
+    var lst = try std.ArrayList(Rule).initCapacity(self.allocator, sub_len);
+    for (node.val.sub.items) |*item|
+      lst.appendAssumeCapacity(try self.buildRep(item));
+    return .{.con = lst};
+  }
+
+  fn buildRep(self: Self, node: *Node) Error!Rule {
+    const last = node.get(node.subLen() - 1);
+    const item = switch (last.tag.?) {
+      .option      => try self.buildOpt(last),
+      .rulename    =>     self.buildJmp(last),
+      .alternation => try self.buildAlt(last),
+      .char_val    => try self.buildStr(last),
+      .bin_val,
+      .dec_val,
+      .hex_val     => try self.buildNum(last),
+      else         =>     unreachable,
+    };
+    errdefer item.deinit(self.allocator);
+
+    if (node.subLen() == 2) {
+      var rule = Rule {.rep = .{.sub = try self.allocator.create(Rule)}};
+      rule.rep.sub.* = item;
+      const str = node.getStr(0);
+      const sep = std.mem.indexOfScalar(u8, str, '*').?;
+      if (sep > 0) rule.rep.min = std.fmt.parseUnsigned(u8, str[0..sep], 10) catch unreachable;
+      if (sep < str.len - 1) rule.rep.min = std.fmt.parseUnsigned(u8, str[sep + 1..], 10) catch unreachable;
+      return rule;
+    } else {
+      return item;
     }
   }
 
-  fn buildRule(self: *Self, node: Node) !Rule {
-    _ = self;
-    _ = node;
-    return .{.jmp = 0};
+  fn buildOpt(self: Self, node: *Node) Error!Rule {
+    const rule = Rule{.rep = .{
+      .max = 1,
+      .sub = try self.allocator.create(Rule),
+    }};
+    errdefer self.allocator.destroy(rule.rep.sub);
+    rule.rep.sub.* = try self.buildAlt(node.get(0));
+    return rule;
+  }
+
+  fn buildJmp(self: Self, node: *Node) Rule {
+    return .{.jmp = self.names.get(node.val.str).?};
+  }
+
+  fn buildStr(self: Self, node: *Node) Error!Rule {
+    const str = node.val.str;
+    return .{.str = try self.allocator.dupe(u8, str[1..str.len - 1])};
+  }
+
+  fn buildNum(self: Self, node: *Node) Error!Rule {
+    const str = node.val.str[2..];
+    const base: u8 = switch (node.tag.?) {
+      .bin_val => 2,
+      .dec_val => 10,
+      .hex_val => 16,
+      else => unreachable,
+    };
+    if (std.mem.indexOfScalar(u8, str, '-')) |i| {
+      return .{.val = .{
+        .min = std.fmt.parseUnsigned(u21, str[0..i   ], base) catch unreachable,
+        .max = std.fmt.parseUnsigned(u21, str[i + 1..], base) catch unreachable,
+      }};
+    } else {
+      var out = std.ArrayList(u8).init(self.allocator);
+      errdefer out.deinit();
+      var buf: [4]u8 = undefined;
+      var iter = std.mem.splitScalar(u8, str, '.');
+      while (iter.next()) |one| {
+        const val = std.fmt.parseUnsigned(u21, one, base) catch unreachable;
+        try out.appendSlice(buf[0..std.unicode.utf8Encode(val, &buf) catch unreachable]);
+      }
+      return .{.str = try out.toOwnedSlice()};
+    }
   }
 };
 
@@ -129,6 +213,7 @@ pub const Rule = union(enum) {
         rep.sub.deinit(allocator);
         allocator.destroy(rep.sub);
       },
+      .str => |str| allocator.free(str),
       else => {},
     }
   }
