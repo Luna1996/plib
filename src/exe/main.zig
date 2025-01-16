@@ -23,7 +23,7 @@ fn gen_abnf(allocator: std.mem.Allocator, name: [:0]const u8) !void {
   const raw_real_path = try std.fs.cwd().realpathAlloc(allocator, raw_path);
   defer allocator.free(raw_real_path);
  
-  var abnf = try @import("abnf").ABNF.build(.{
+  var abnf = try ABNF.build(.{
     .allocator = allocator, 
     .file_path = raw_real_path,
     .input = raw,
@@ -37,11 +37,4 @@ fn gen_abnf(allocator: std.mem.Allocator, name: [:0]const u8) !void {
   defer gen_file.close();
 
   try gen_file.writer().print("{}", .{abnf});
-}
-
-test "main" {
-  std.debug.print("\n", .{});
-  const allocator = std.testing.allocator;
-  const name = "abnf";
-  try gen_abnf(allocator, name);
 }

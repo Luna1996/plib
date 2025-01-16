@@ -1,7 +1,6 @@
 const std = @import("std");
-const abnf = @import("gen.abnf").abnf;
 const plib = @import("plib");
-const Parser = plib.Parser(abnf);
+const Parser = plib.Parser(@import("gen").abnf);
 const Tag = Parser.Tag;
 const Node = Parser.Node;
 

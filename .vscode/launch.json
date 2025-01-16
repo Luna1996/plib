@@ -10,7 +10,7 @@
       "logging": {
         "moduleLoad": false,
       },
-      "preLaunchTask": "build test",
+      "preLaunchTask": "test",
       "console": "internalConsole",
       "internalConsoleOptions": "openOnSessionStart",
     },
