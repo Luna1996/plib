@@ -28,6 +28,19 @@ pub fn Parser(comptime abnf: ABNF) type {
         val: Rule.Val,
         str: Rule.Str,
       },
+
+      pub fn format(
+        self: @This(), 
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+      ) !void {
+        try writer.print("[{d}] ", .{self.pos});
+        switch (self.wht) {
+          .val => |val| try writer.print("{d}-{d}", .{val.min, val.max}),
+          .str => |str| try writer.print("\"{}\"", .{std.zig.fmtEscapes(str)}),
+        }
+      }
     };
 
     const FailWithContext = struct {

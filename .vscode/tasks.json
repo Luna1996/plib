@@ -14,10 +14,6 @@
         "showReuseMessage": true,
         "clear": true
       },
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      }
     },
     {
       "label": "gen abnf",
@@ -32,6 +28,10 @@
         "showReuseMessage": true,
         "clear": true
       },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
     }
   ],
   "inputs": [
