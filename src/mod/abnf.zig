@@ -31,6 +31,7 @@ pub const ABNF = struct {
       .rules = std.ArrayList(Rule).init(allocator),
     };
 
+    errdefer self.deinit();
     try self.buildABNF(&root);
 
     return self;
@@ -82,29 +83,29 @@ pub const ABNF = struct {
       }
     }
 
-    std.debug.print("{}", .{root});
-
     try self.rules.ensureTotalCapacityPrecise(id);
     for (root.val.sub.items) |*item|
-      try self.rules.append(try self.buildAlt(item.get(1)));
+      self.rules.appendAssumeCapacity(try self.buildAlt(item.get(1)));
   }
 
   fn buildAlt(self: Self, node: *Node) Error!Rule {
     const sub_len = node.subLen();
-    if (sub_len == 1) return try self.buildCon(node);
-    var lst = try std.ArrayList(Rule).initCapacity(self.allocator, sub_len);
+    if (sub_len == 1) return try self.buildCon(node.get(0));
+    var res = Rule {.alt = try std.ArrayList(Rule).initCapacity(self.allocator, sub_len)};
+    errdefer res.deinit(self.allocator);
     for (node.val.sub.items) |*item|
-      lst.appendAssumeCapacity(try self.buildCon(item));
-    return .{.alt = lst};
+      res.alt.appendAssumeCapacity(try self.buildCon(item));
+    return res;
   }
 
   fn buildCon(self: Self, node: *Node) Error!Rule {
     const sub_len = node.subLen();
-    if (sub_len == 1) return try self.buildRep(node);
-    var lst = try std.ArrayList(Rule).initCapacity(self.allocator, sub_len);
+    if (sub_len == 1) return try self.buildRep(node.get(0));
+    var res = Rule {.con = try std.ArrayList(Rule).initCapacity(self.allocator, sub_len)};
+    errdefer res.deinit(self.allocator);
     for (node.val.sub.items) |*item|
-      lst.appendAssumeCapacity(try self.buildRep(item));
-    return .{.con = lst};
+      res.con.appendAssumeCapacity(try self.buildRep(item));
+    return res;
   }
 
   fn buildRep(self: Self, node: *Node) Error!Rule {
@@ -125,9 +126,16 @@ pub const ABNF = struct {
       var rule = Rule {.rep = .{.sub = try self.allocator.create(Rule)}};
       rule.rep.sub.* = item;
       const str = node.getStr(0);
-      const sep = std.mem.indexOfScalar(u8, str, '*').?;
-      if (sep > 0) rule.rep.min = std.fmt.parseUnsigned(u8, str[0..sep], 10) catch unreachable;
-      if (sep < str.len - 1) rule.rep.min = std.fmt.parseUnsigned(u8, str[sep + 1..], 10) catch unreachable;
+      if (std.mem.indexOfScalar(u8, str, '*')) |sep| {
+        if (sep > 0)
+          rule.rep.min = std.fmt.parseUnsigned(u8, str[0..sep]   , 10) catch unreachable;
+        if (sep < str.len - 1)
+          rule.rep.max = std.fmt.parseUnsigned(u8, str[sep + 1..], 10) catch unreachable;
+      } else {
+        const num =      std.fmt.parseUnsigned(u8, str           , 10) catch unreachable;
+        rule.rep.min = num;
+        rule.rep.max = num;
+      }
       return rule;
     } else {
       return item;
@@ -178,6 +186,25 @@ pub const ABNF = struct {
       return .{.str = try out.toOwnedSlice()};
     }
   }
+
+  pub fn format(
+    self: Self, 
+    comptime _: []const u8,
+    _: std.fmt.FormatOptions,
+    writer: anytype,
+  ) !void {
+    try writer.writeAll("pub const abnf = @import(\"plib\").ABNF {\n  .names = &.{\n");
+    for (self.names.keys()) |name| {
+      const tag = try self.allocator.dupe(u8, name);
+      defer self.allocator.free(tag);
+      std.mem.replaceScalar(u8, tag, '-', '_');
+      try writer.print("    \"{s}\",\n", .{tag});
+    }
+    try writer.writeAll("  },\n  .rules = &.{\n");
+    for (self.rules.items) |rule|
+      try writer.print("    {},\n", .{rule});
+    try writer.writeAll("  }\n};");
+  }
 };
 
 pub const Rule = union(enum) {
@@ -186,7 +213,7 @@ pub const Rule = union(enum) {
   pub const Con = std.ArrayList(Rule);
   pub const Rep = struct {
     min: u8 = 0,
-    max: ?u8 = null,
+    max: u8 = 0,
     sub: *Rule,
   };
   pub const Str = []const u8;
@@ -216,5 +243,37 @@ pub const Rule = union(enum) {
       .str => |str| allocator.free(str),
       else => {},
     }
+  }
+
+  pub fn format(
+    self: Self, 
+    comptime fmt: []const u8,
+    options: std.fmt.FormatOptions,
+    writer: anytype,
+  ) !void {
+    try writer.print(".{{.{s}=", .{@tagName(self)});
+    switch (self) {
+      .alt, .con => |lst| {
+        try writer.writeAll("&.{");
+        const max = lst.items.len - 1;
+        for (lst.items, 0..) |rule, i| {
+          try rule.format(fmt, options, writer);
+          if (i != max) try writer.writeByte(',');
+        }
+        try writer.writeByte('}');
+      },
+      .rep => |rep| {
+        try writer.writeAll(".{");
+        if (rep.min != 0) try writer.print(".min={d},", .{rep.min});
+        if (rep.max != 0) try writer.print(".max={d},", .{rep.max});
+        try writer.writeAll(".sub=&");
+        try rep.sub.format(fmt, options, writer);
+        try writer.writeAll("}");
+      },
+      .str => |str| try writer.print("\"{}\"", .{std.zig.fmtEscapes(str)}),
+      .val => |val| try writer.print(".{{.min={d},.max={d}}}", .{val.min, val.max}),
+      .jmp => |jmp| try writer.print("{d}", .{jmp}),
+    }
+    try writer.writeByte('}');
   }
 };

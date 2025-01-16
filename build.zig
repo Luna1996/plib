@@ -21,7 +21,6 @@ pub fn build(b: *std.Build) !void {
   main_mod.addImport("abnf", b.modules.get("abnf").?);
 
   const test_exe = b.addTest(.{
-    .target = target,
     .optimize = optimize,
     .root_module = main_mod,
   });
@@ -34,7 +33,6 @@ pub fn build(b: *std.Build) !void {
   if (opt_gen_name) |gen_name| {
     const gen_run = b.addRunArtifact(b.addExecutable(.{
       .name = "gen",
-      .target = target,
       .optimize = optimize,
       .root_module = main_mod,
     }));

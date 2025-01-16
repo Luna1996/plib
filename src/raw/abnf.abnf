@@ -29,7 +29,7 @@ repetition     =  option /
                     dec-val /
                     hex-val)
 
-repeat         =  *dec "*" *dec
+repeat         =  1*dec / *dec "*" *dec
 
 option         =  "[" [empty] alternation [empty] "]"
 

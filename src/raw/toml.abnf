@@ -240,4 +240,4 @@ array-table-close = ws %x5D.5D  ; ]] Double right square bracket
 
 ALPHA = %x41-5A / %x61-7A ; A-Z / a-z
 DIGIT = %x30-39 ; 0-9
-HEXDIG = DIGIT / %x41-46 / %x61-66 ; 0-9 / A-F / a-f
+HEXDIG = DIGIT / %x41-46 ; 0-9 / A-F

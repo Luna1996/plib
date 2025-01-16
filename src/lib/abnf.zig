@@ -5,7 +5,7 @@ pub const Rule = union(enum) {
   pub const Con = []const Rule;
   pub const Rep = struct {
     min: u8 = 0,
-    max: ?u8 = null,
+    max: u8 = 0,
     sub: *const Rule,
   };
   pub const Str = []const u8;

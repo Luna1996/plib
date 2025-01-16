@@ -14,10 +14,36 @@
         "showReuseMessage": true,
         "clear": true
       },
+    },
+    {
+      "label": "gen abnf",
+      "type": "shell",
+      "command": "zig build gen -Dname=${input:abnf_name}",
+      "problemMatcher": "$zig",
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": true
+      },
       "group": {
         "kind": "build",
         "isDefault": true
       }
     }
   ],
+  "inputs": [
+    {
+      "id": "abnf_name",
+      "description": "which abnf file to generate",
+      "type": "pickString",
+      "options": [
+        "abnf",
+        "toml"
+      ],
+      "default": "abnf",
+    }
+  ]
 }
