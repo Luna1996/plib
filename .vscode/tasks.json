@@ -41,7 +41,7 @@
       "type": "pickString",
       "options": [
         "abnf",
-        "toml"
+        "toml",
       ],
       "default": "abnf",
     }

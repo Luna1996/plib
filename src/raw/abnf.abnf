@@ -29,7 +29,7 @@ repetition     =  option /
                     dec-val /
                     hex-val)
 
-repeat         =  1*dec / *dec "*" *dec
+repeat         =  *dec "*" *dec / 1*dec
 
 option         =  "[" [empty] alternation [empty] "]"
 
@@ -46,6 +46,8 @@ bin-val        =  "%b" 1*bit [ 1*("." 1*bit) / ("-" 1*bit) ]
 dec-val        =  "%d" 1*dec [ 1*("." 1*dec) / ("-" 1*dec) ]
 
 hex-val        =  "%x" 1*hex [ 1*("." 1*hex) / ("-" 1*hex) ]
+
+prose-val      =  "<" *(%x20-3D / %x3F-7E) ">"
 
 empty-line     =  *wsp [comment] crlf
 

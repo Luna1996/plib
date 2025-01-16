@@ -143,8 +143,7 @@ pub fn Parser(comptime abnf: ABNF) type {
 
     fn parseRuleRep(self: *Self, rep: Rule.Rep) ParseError!void {
       var cnt: usize = 0;
-      while (true) {
-        if (0 > rep.max and cnt > rep.max) break;
+      while (rep.max == 0 or cnt < rep.max) {
         self.parseRule(rep.sub.*) catch break;
         cnt += 1;
       }
