@@ -97,10 +97,9 @@ escape-seq-char =/ %x55 8HEXDIG ; UHHHHHHHH            U+HHHHHHHH
 
 ;; Multiline Basic String
 
-ml-basic-string = ml-basic-string-delim [ newline ] ml-basic-body
-                  ml-basic-string-delim
+ml-basic-string =  ml-basic-string-delim ml-basic-string-rest
 ml-basic-string-delim = 3quotation-mark
-ml-basic-body = *mlb-content *( mlb-quotes 1*mlb-content ) [ mlb-quotes ]
+ml-basic-string-rest = *mlb-content (3*5quotation-mark / mlb-quotes mlb-content ml-basic-string-rest)
 
 mlb-content = basic-char / newline / mlb-escaped-nl
 mlb-quotes = 1*2quotation-mark
@@ -116,17 +115,16 @@ literal-char = %x09 / %x20-26 / %x28-7E / non-ascii
 
 ;; Multiline Literal String
 
-ml-literal-string = ml-literal-string-delim [ newline ] ml-literal-body
-                    ml-literal-string-delim
+ml-literal-string = ml-literal-string-delim ml-literal-string-rest
 ml-literal-string-delim = 3apostrophe
-ml-literal-body = *mll-content *( mll-quotes 1*mll-content ) [ mll-quotes ]
+ml-literal-string-rest = *mll-content (3*5apostrophe / mll-quotes mll-content ml-literal-string-rest)
 
 mll-content = literal-char / newline
 mll-quotes = 1*2apostrophe
 
 ;; Integer
 
-integer = dec-int / hex-int / oct-int / bin-int
+integer = hex-int / oct-int / bin-int / dec-int
 
 minus = %x2D                       ; -
 plus = %x2B                        ; +
@@ -156,7 +154,7 @@ frac = decimal-point zero-prefixable-int
 decimal-point = %x2E               ; .
 zero-prefixable-int = DIGIT *( [ underscore ] DIGIT )
 
-exp = "e" float-exp-part
+exp = ("e" / "E") float-exp-part
 float-exp-part = [ minus / plus ] zero-prefixable-int
 
 special-float = [ minus / plus ] ( inf / nan )
@@ -177,13 +175,13 @@ date-time      = offset-date-time / local-date-time / local-date / local-time
 date-fullyear  = 4DIGIT
 date-month     = 2DIGIT  ; 01-12
 date-mday      = 2DIGIT  ; 01-28, 01-29, 01-30, 01-31 based on month/year
-time-delim     = "T" / %x20 ; T, t, or space
+time-delim     = "T" / "t" / %x20 ; T, t, or space
 time-hour      = 2DIGIT  ; 00-23
 time-minute    = 2DIGIT  ; 00-59
 time-second    = 2DIGIT  ; 00-58, 00-59, 00-60 based on leap second rules
 time-secfrac   = "." 1*DIGIT
 time-numoffset = ( "+" / "-" ) time-hour ":" time-minute
-time-offset    = "Z" / time-numoffset
+time-offset    = "Z" / "z" / time-numoffset
 
 partial-time   = time-hour ":" time-minute [ ":" time-second [ time-secfrac ] ]
 full-date      = date-fullyear "-" date-month "-" date-mday
@@ -251,4 +249,4 @@ array-table-close = ws %x5D.5D  ; ]] Double right square bracket
 
 ALPHA = %x41-5A / %x61-7A ; A-Z / a-z
 DIGIT = %x30-39 ; 0-9
-HEXDIG = %x30-39 / %x41-46 ; 0-9 / A-F
+HEXDIG = %x30-39 / %x41-46 / %x61-66 ; 0-9 / A-F / a-f

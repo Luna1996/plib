@@ -103,4 +103,4 @@ const Builder = struct {
   }
 };
 
-pub fn build(b: *std.Build) !void { try Builder.init(b).build();}
+pub fn build(b: *std.Build) !void { try Builder.init(b).build(); }
