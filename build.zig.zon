@@ -6,4 +6,11 @@
     "build.zig",
     "build.zig.zon"
   },
+  .dependencies = .{
+    .zeit = .{
+      .url = "https://github.com/rockorager/zeit/archive/52b100caa223d5cb1ff0d34f1b677f26e0ce8b84.tar.gz",
+      .hash = "1220e97357cc39f4f9f053c763f3ec1623e0c7f3999f185746f2bd9bf9b5c5551392",
+      .lazy = true,
+    },
+  },
 }

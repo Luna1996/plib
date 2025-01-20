@@ -7,9 +7,17 @@ const Array = std.ArrayList;
 const Table = std.StringHashMap;
 
 pub const Toml = struct {
+  pub const Value = union(enum) {
+    string: []const u8,
+    boolean: bool,
+    array: Array(Value),
+    table: Table(Value),
+    date_time: usize,
+    float: f64,
+    integer: i64,
+  };
+
   allocator: std.mem.Allocator,
-  span: ?Span,
-  text: []const u8,
   root: Value,
 
   const Self = @This();
@@ -18,27 +26,15 @@ pub const Toml = struct {
     allocator: std.mem.Allocator,
     file_path: ?[]const u8 = null,
     input: []const u8,
-    edit_mode: bool = false,
   };
 
   pub fn build(conf: Conf) !Self {
     const root = try parse(conf);
     defer root.deinit();
 
-    const text: []const u8 =
-      if (conf.edit_mode) try conf.allocator.dupe(u8, conf.input) else conf.input;
-    
-    const span: ?Span =
-      if (conf.edit_mode) .{
-        .min = 0, .max = text.len,
-        .sub = .{ .table = Table(Span).init(conf.allocator) },
-      } else null;
-
     const self = Self {
       .allocator = conf.allocator,
       .root = Table(Value).init(conf.allocator),
-      .text = text,
-      .span = span,
     };
     errdefer self.deinit();
   }
@@ -50,7 +46,6 @@ pub const Toml = struct {
       .keeps = &.{
         .toml, .key, .std_table, .array_table,
         .string, .boolean, .array, .inline_table, .date_time, .float, .integer,
-        .date_fullyear, .full_date, .partial_time, .time_numoffset, 
       },
       .file_path = conf.file_path,
     });
@@ -65,10 +60,6 @@ pub const Toml = struct {
   }
 
   pub fn deinit(self: Self) void {
-    if (self.span) |span| {
-      self.allocator.free(self.text);
-      self.deinitSpan(span);
-    }
     self.deinitValue(self.root);
   }
 
@@ -90,45 +81,7 @@ pub const Toml = struct {
     }
   }
 
-  fn deinitSpan(self: Self, span: Span) void {
-    if (span.sub) |sub| switch (sub) {
-      .array => |array| {
-        for (array.items) |item| self.deinitSpan(item);
-        array.deinit();
-      },
-      .table => |table| {
-        var iter = table.valueIterator();
-        while (iter.next()) |item| self.deinitSpan(item.*);
-        table.deinit();
-      },
-    };
-  }
-
   // fn buildToml(self: Self, root: Node) !void {}
-};
-
-pub const Value = union(enum) {
-  string: []const u8,
-  boolean: bool,
-  array: Array(Value),
-  table: Table(Value),
-  date_time: DateTime,
-  float: f64,
-  integer: i64,
-};
-
-pub const DateTime = struct {
-  timestamp: i64,
-  offset: i64,
-};
-
-const Span = struct {
-  dirty: bool = false,
-  min: usize, max: usize,
-  sub: ? union(enum) {
-    array: Array(Span),
-    table: Table(Span),
-  },
 };
 
 test "toml" {

@@ -9,11 +9,9 @@ pub fn main() !void {
 
   const args = try std.process.argsAlloc(allocator);
   defer std.process.argsFree(allocator, args);
-  
-  try gen_abnf(allocator, args[1]);
-}
 
-fn gen_abnf(allocator: std.mem.Allocator, name: [:0]const u8) !void {
+  const name = args[1];
+
   const raw_path = try std.fmt.allocPrint(allocator, "src/raw/{s}.abnf", .{name});
   defer allocator.free(raw_path);
 

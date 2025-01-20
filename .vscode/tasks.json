@@ -4,7 +4,7 @@
     {
       "label": "test",
       "type": "shell",
-      "command": "zig build test -Dname=${input:abnf_name}",
+      "command": "zig build -Dstep=test -Dname=${input:mod_name}",
       "problemMatcher": "$zig",
       "presentation": {
         "echo": true,
@@ -13,12 +13,12 @@
         "panel": "shared",
         "showReuseMessage": true,
         "clear": true
-      },
+      }
     },
     {
-      "label": "gen abnf",
+      "label": "gen_abnf",
       "type": "shell",
-      "command": "zig build gen -Dname=${input:abnf_name}",
+      "command": "zig build -Dstep=gen_abnf -Dname=${input:mod_name}",
       "problemMatcher": "$zig",
       "presentation": {
         "echo": true,
@@ -28,16 +28,12 @@
         "showReuseMessage": true,
         "clear": true
       },
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      }
     }
   ],
   "inputs": [
     {
-      "id": "abnf_name",
-      "description": "which abnf file to generate",
+      "id": "mod_name",
+      "description": "input module name",
       "type": "pickString",
       "options": [
         "plib",

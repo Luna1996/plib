@@ -1,106 +1,163 @@
 const std = @import("std");
 
 const Builder = struct {
+  b: *std.Build,
+  
+  conf: Conf,
+  mods: std.enums.EnumArray(Name, *std.Build.Module),
+
   const Self = @This();
 
-  b: *std.Build,
-  target: std.Build.ResolvedTarget,
-  optimize: std.builtin.OptimizeMode,
-  plib_mod: *std.Build.Module,
-  name: ?[]const u8 = null,
+  const Conf = struct {
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    step: ?Step,
+    name: ?Name,
+    need: std.enums.EnumSet(Name),
+  }; 
+
+
+
+  const Step = enum {
+    @"test", gen_abnf,
+  };
+
+  const step_fns = std.enums.EnumArray(Step, *const fn(Self) void).init(.{
+    .@"test" = buildTest,
+    .gen_abnf = buildGenABNF,
+  });
+
+  const Name = enum {
+    plib, abnf, toml,
+  };
+
+  const mod_fns = std.enums.EnumArray(Name, *const fn(Self) *std.Build.Module).init(.{
+    .plib = buildPlib,
+    .abnf = buildABNF,
+    .toml = buildToml,
+  });
 
   fn init(b: *std.Build) Self {
-    const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
-    const plib_mod = b.addModule("plib", .{
-      .target = target,
-      .optimize = optimize,
-      .root_source_file = b.path("src/lib/root.zig"),
+    var self: Self = undefined;
+    self.b = b;
+    self.initOpts();
+    return self;
+  }
+
+  fn initOpts(self: *Self) void {
+    self.conf.target = self.b.standardTargetOptions(.{});
+    self.conf.optimize = self.b.standardOptimizeOption(.{});
+
+    self.conf.step = self.b.option(Step, "step", "Which step to take");
+    self.conf.name = self.b.option(Name, "name", "Input file base name");
+
+    inline for (comptime std.meta.tags(Name)) |tag| {
+      const name = @tagName(tag);
+      self.conf.need.setPresent(tag,
+        self.b.option(bool, name, "Need " ++ name ++ " module") orelse false);
+    }
+
+    self.conf.need.setPresent(.plib, true);
+
+    if (self.conf.step) |step| switch (step) {
+      .@"test" => if (self.conf.name) |name| 
+        self.conf.need.setPresent(name, true),
+      .gen_abnf =>
+        self.conf.need.setPresent(.abnf, true),
+    };
+  }
+
+  fn build(b: *std.Build) void {
+    var self = init(b);
+    
+    for (std.meta.tags(Name)) |name| {
+      if (self.conf.need.contains(name))
+        self.mods.set(name, mod_fns.get(name)(self));
+    }
+    if (self.conf.step) |step|
+      step_fns.get(step)(self);
+  }
+
+  fn buildPlib(self: Self) *std.Build.Module {
+    return self.b.addModule("plib", .{
+      .target = self.conf.target,
+      .optimize = self.conf.optimize,
+      .root_source_file = self.b.path("src/lib/root.zig"),
     });
-    return .{
-      .b = b,
-      .target = target,
-      .optimize = optimize,
-      .plib_mod = plib_mod,
-      .name = b.option([]const u8, "name", "input file/module name"),
-    };
   }
 
-  fn build(self: Self) !void {
-    try self.buildMods();
-    try self.buildMain();
-    try self.buildTest();
+  fn buildABNF(self: Self) *std.Build.Module {
+    return self.buildSubMod(.abnf);
   }
 
-  fn buildMods(self: Self) !void {
-    var gen_dir = try self.b.build_root.handle.openDir("src/mod", .{ .iterate = true });
-    defer gen_dir.close();
-    var iter = gen_dir.iterate();
-    while (try iter.next()) |entry| switch (entry.kind) {
-      .file => try self.buildMod(entry.name),
-      else => {},
-    };
+  fn buildToml(self: Self) *std.Build.Module {
+    const toml_mod = self.buildSubMod(.toml);
+    if (self.b.lazyDependency("zeit", .{})) |zeit| {
+      toml_mod.addImport("zeit", zeit.module("zeit"));
+    }
+    return toml_mod;
   }
 
-  fn buildMod(self: Self, file_name: []const u8) !void {
-    const mod_name = file_name[0..file_name.len - 4];
-    const mod_path = try std.fmt.allocPrint(self.b.allocator, "src/mod/{s}", .{file_name});
-    defer self.b.allocator.free(mod_path);
+  fn buildSubMod(self: Self, comptime file: Name) *std.Build.Module {
+    const mod_name = @tagName(file);
+    const mod_path = "src/mod/" ++ mod_name ++ ".zig";
+    const gen_path = "src/gen/" ++ mod_name ++ ".zig";
+
     const mod_mod = self.b.addModule(mod_name, .{
-      .target = self.target,
-      .optimize = self.optimize,
+      .target = self.conf.target,
+      .optimize = self.conf.optimize,
       .root_source_file = self.b.path(mod_path),
     });
-
-    const gen_name = try std.fmt.allocPrint(self.b.allocator, "gen.{s}", .{mod_name});
-    defer self.b.allocator.free(gen_name);
-    const gen_path = try std.fmt.allocPrint(self.b.allocator, "src/gen/{s}", .{file_name});
-    defer self.b.allocator.free(gen_path);
+    
     const gen_mod = self.b.createModule(.{
-      .target = self.target,
-      .optimize = self.optimize,
+      .target = self.conf.target,
+      .optimize = self.conf.optimize,
       .root_source_file = self.b.path(gen_path),
     });
-    gen_mod.addImport("plib", self.plib_mod);
+    
+    gen_mod.addImport("plib", self.mods.get(.plib));
     mod_mod.addImport("gen", gen_mod);
-    mod_mod.addImport("plib", self.plib_mod);
+    mod_mod.addImport("plib", self.mods.get(.plib));
+
+    return mod_mod;
   }
 
-  fn buildMain(self: Self) !void {
-    const gen_step = self.b.step("gen", "generate src/gen/<name>.zig using src/raw/<name>.abnf");
-    if (self.name) |gen_name| {
-      const gen_exe = self.b.addExecutable(.{
-        .name = "gen",
-        .target = self.target,
-        .optimize = self.optimize,
-        .root_source_file = self.b.path("src/exe/main.zig"),
-      });
-      gen_exe.root_module.addImport("abnf", self.b.modules.get("abnf").?);
-      const gen_run = self.b.addRunArtifact(gen_exe);
-      gen_run.setCwd(self.b.path("."));
-      gen_run.addArg(gen_name);
-      gen_run.stdio = .inherit;
-      gen_step.dependOn(&gen_run.step);
-    } else {
-      gen_step.dependOn(&self.b.addFail("The -Dname=... option is required for this step").step);
-    }
+  fn buildTest(self: Self) void {
+    const step = self.b.default_step;
+
+    const name = self.conf.name orelse {
+      step.dependOn(&self.b.addFail("The -Dname=... option is required for this step").step);
+      return;
+    };
+
+    step.dependOn(&self.b.addInstallArtifact(self.b.addTest(.{
+      .optimize = self.conf.optimize,
+      .root_module = self.mods.get(name),
+    }), .{}).step);
   }
 
-  fn buildTest(self: Self) !void {
-    const test_step = self.b.step("test", "test [name] module");
-    if (self.name) |mod_name| {
-      if (self.b.modules.get(mod_name)) |test_mod| {
-        test_step.dependOn(&self.b.addInstallArtifact(self.b.addTest(.{
-          .optimize = self.optimize,
-          .root_module = test_mod,
-        }), .{}).step);
-      } else {
-        test_step.dependOn(&self.b.addFail(try std.fmt.allocPrint(self.b.allocator, "{s} is not a module name", .{mod_name})).step);
-      }
-    } else {
-      test_step.dependOn(&self.b.addFail("The -Dname=... option is required for this step").step);
-    }
+  fn buildGenABNF(self: Self) void {
+    const step = self.b.default_step;
+    const name = self.conf.name orelse {
+      step.dependOn(&self.b.addFail("The -Dname=... option is required for this step").step);
+      return;
+    };
+
+    const exe = self.b.addExecutable(.{
+      .name = "gen_abnf",
+      .target = self.conf.target,
+      .optimize = self.conf.optimize,
+      .root_source_file = self.b.path("src/exe/gen_abnf.zig"),
+    });
+    exe.root_module.addImport("abnf", self.mods.get(.abnf));
+
+    const run = self.b.addRunArtifact(exe);
+    run.setCwd(self.b.path("."));
+    run.addArg(@tagName(name));
+    run.stdio = .inherit;
+
+    step.dependOn(&run.step);
   }
 };
 
-pub fn build(b: *std.Build) !void { try Builder.init(b).build(); }
+pub fn build(b: *std.Build) !void { Builder.build(b); }
