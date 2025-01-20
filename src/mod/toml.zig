@@ -141,21 +141,25 @@ pub const Toml = struct {
     }
   }
 
-  const build_value_fns = std.enums.EnumArray(std.meta.Tag(Value), *const fn(Self, *Value, Node) BuildError!void).init(.{
-    .string = buildString,
-    .boolean = buildBoolean,
-    .array = buildArray,
-    .table = buildTable,
-    .nanosec = buildNanosec,
-    .float = buildFloat,
-    .integer = buildInteger,
-  });
-
   fn buildValue(self: Self, ctx: *Value, node: Node) !void {
-    try build_value_fns.get(std.meta.activeTag(ctx.*))(self, ctx, node);
+    switch (std.meta.activeTag(ctx.*)) {
+      .string =>  try self.buildString (ctx, node),
+      .boolean => try self.buildBoolean(ctx, node),
+      .array =>   try self.buildArray  (ctx, node),
+      .table =>   try self.buildTable  (ctx, node),
+      .nanosec => try self.buildNanosec(ctx, node),
+      .float =>   try self.buildFloat  (ctx, node),
+      .integer => try self.buildInteger(ctx, node),
+    }
   }
 
   fn buildString(self: Self, ctx: *Value, node: Node) !void {
+    ctx.string = switch (node.tag.?) {
+      .basic_string => try unescape(self.allocator, node.val.str[1..node.val.str.len - 1]),
+      .ml_basic_string => try unescape(self.allocator, node.val.str[3..node.val.str.len - 3]),
+      .literal_string => try self.allocator.dupe(),
+      else => unreachable,
+    };
   }
 
   fn buildBoolean(self: Self, ctx: *Value, node: Node) !void {}
