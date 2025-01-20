@@ -35,6 +35,8 @@ pub const Toml = struct {
     input: []const u8,
   };
 
+  const BuildError = error {TomlError} || std.mem.Allocator.Error;
+
   pub fn build(conf: Conf) !Self {
     const root = try parse(conf);
     defer root.deinit();
@@ -108,28 +110,65 @@ pub const Toml = struct {
     }
   }
 
-  fn buildToml(self: *Self, root: Node) !void {
+  fn buildToml(self: Self, root: Node) !void {
     const items = root.val.sub.items;
+    const ctx = &self.root;
     var i: usize = 0;
-    var ctx = self.root;
     while (i < items.len) {
       const item = items[i];
       switch (item.tag.?) {
         .key => {
           i += 1;
           const next = items[i];
-          if (self.resolveMulByNode(&ctx, item, nodeTagToValueType(next.tag.?))) {
+          var new = ctx.*;
+          if (try self.resolveMulByNode(&new, item, nodeTagToValueType(next.tag.?))) {
             return error.TomlError;
           }
-          // TODO
+          try self.buildValue(&new, next);
         },
-        .std_table => {},
-        .array_table => {},
+        .std_table => if (try self.resolveMulByNode(ctx, item.get(0).*, .table)) {
+          return error.TomlError;
+        },
+        .array_table => {
+          _ = try self.resolveMulByNode(ctx, item.get(0).*, .array);
+          const new = self.initValue(.array);
+          try ctx.array.append(new);
+          ctx.* = new;
+        },
         else => unreachable,
       }
       i += 1;
     }
   }
+
+  const build_value_fns = std.enums.EnumArray(std.meta.Tag(Value), *const fn(Self, *Value, Node) BuildError!void).init(.{
+    .string = buildString,
+    .boolean = buildBoolean,
+    .array = buildArray,
+    .table = buildTable,
+    .nanosec = buildNanosec,
+    .float = buildFloat,
+    .integer = buildInteger,
+  });
+
+  fn buildValue(self: Self, ctx: *Value, node: Node) !void {
+    try build_value_fns.get(std.meta.activeTag(ctx.*))(self, ctx, node);
+  }
+
+  fn buildString(self: Self, ctx: *Value, node: Node) !void {
+  }
+
+  fn buildBoolean(self: Self, ctx: *Value, node: Node) !void {}
+
+  fn buildArray(self: Self, ctx: *Value, node: Node) !void {}
+
+  fn buildTable(self: Self, ctx: *Value, node: Node) !void {}
+
+  fn buildNanosec(self: Self, ctx: *Value, node: Node) !void {}
+
+  fn buildFloat(self: Self, ctx: *Value, node: Node) !void {}
+
+  fn buildInteger(self: Self, ctx: *Value, node: Node) !void {}
 
   fn resolveMulByNode(self: Self, ctx: *Value, key: Node, wht: ValueType) !bool {
     const sub_len = key.subLen();
