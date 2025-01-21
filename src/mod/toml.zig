@@ -1,49 +1,27 @@
 const std = @import("std");
 
-const zeit = @import("zeit");
+pub const zeit = @import("zeit");
 
 const plib = @import("plib");
 const Parser = plib.Parser(@import("gen").abnf);
 const Node = Parser.Node;
+
+pub const Instant = @import("toml/time.zig");
+const esc = @import("toml/escape.zig");
 
 pub const Toml = union(enum) {
   string : []const u8,
   integer: i64,
   float  : f64,
   boolean: bool,
-  time   : Time,
+  instant: Instant,
   array  : Array,
   table  : Table,
 
   const Self = @This();
   
-  const Tag = std.meta.Tag(Self);
+  const Tag = @as(type, std.meta.Tag(Self));
 
-  pub const Time = struct {
-    timestamp: i64 = 0,
-    offset:    i64 = 0,
-
-    pub fn fromZeit(time: zeit.Time) Time {
-      const days = zeit.daysFromCivil(.{
-        .year  = time.year ,
-        .month = time.month,
-        .day   = time.day  ,
-      });
-      return .{
-        .timestamp =
-          @as(i64,      days       ) * std.time.us_per_day +
-          @as(i64, time.hour       ) * std.time.us_per_hour +
-          @as(i64, time.minute     ) * std.time.us_per_min +
-          @as(i64, time.second     ) * std.time.us_per_s +
-          @as(i64, time.millisecond) * std.time.us_per_ms +
-          @as(i64, time.microsecond) * std.time.us_per_us +
-          @as(i64, time.nanosecond ),
-
-        .offset = @as(i64, time.offset) * std.time.ns_per_day,
-      };
-    }
-  };
-  
   const Array = std.ArrayListUnmanaged(Self);
   const Table = std.StringHashMapUnmanaged(Self);
   
@@ -80,6 +58,7 @@ pub const Toml = union(enum) {
   pub fn build(conf: Conf) !Self {
     var root = try parse(conf);
     defer root.deinit(conf.allocator);
+    return try buildToml(conf.allocator, &root);
   }
 
   pub fn init(comptime tag: Tag) Self {
@@ -88,7 +67,7 @@ pub const Toml = union(enum) {
       .integer => .{ .integer = 0           },
       .float   => .{ .float   = 0           },
       .boolean => .{ .boolean = false       },
-      .time    => .{ .time    = .{}         },
+      .instant => .{ .instant = .{}         },
       .array   => .{ .array   = Array.empty },
       .table   => .{ .table   = Table.empty },
     };
@@ -99,7 +78,7 @@ pub const Toml = union(enum) {
       .string  => |string| allocator.free(string),
       .array   => |*array| deinitArray(array, allocator),
       .table   => |*table| deinitTable(table, allocator),
-      else     =>          unreachable,
+      else     => {},
     }
   }
 
@@ -118,7 +97,14 @@ pub const Toml = union(enum) {
     table.deinit(allocator);
   }
 
-  fn buildToml(allocator: std.mem.Allocator, node: Node) !Self {
+  const BuildError = error {TomlError} 
+    || std.mem.Allocator.Error
+    || std.fmt.ParseIntError
+    || std.fmt.ParseFloatError
+    || error { Utf8CannotEncodeSurrogateHalf, CodepointTooLarge }
+    || error { InvalidISO8601, UnhandledFormat };
+
+  fn buildToml(allocator: std.mem.Allocator, node: *const Node) !Self {
     var root = init(.table);
     errdefer root.deinit(allocator);
 
@@ -162,7 +148,7 @@ pub const Toml = union(enum) {
     item.* = try buildVal(allocator, val);
   }
 
-  fn buildVal(allocator: std.mem.Allocator, node: *const Node) !Self {
+  fn buildVal(allocator: std.mem.Allocator, node: *const Node) BuildError!Self {
     return switch (node.tag.?) {
       .basic_string,
       .literal_string,
@@ -173,13 +159,13 @@ pub const Toml = union(enum) {
       .boolean           =>     buildBoolean (           node),
       .array             => try buildArray   (allocator, node),
       .table             => try buildTable   (allocator, node),
-      else               =>     buildTime    (           node),
+      else               =>     buildInstant (           node),
     };
   }
 
   fn buildString(allocator: std.mem.Allocator, node: *const Node) !Self {
     const str, const need_free = try dupeString(allocator, node);
-    return .{.string = if (need_free) str else try allocator.dupe(str) };
+    return .{.string = if (need_free) str else try allocator.dupe(u8, str) };
   }
 
   fn buildInteger(node: *const Node) !Self {
@@ -187,25 +173,42 @@ pub const Toml = union(enum) {
   }
   
   fn buildFloat(node: *const Node) !Self {
-    return .{.float = try std.fmt.parseFloat(f64, node.val.str, 0)};
+    return .{.float = try std.fmt.parseFloat(f64, node.val.str)};
   }
   
   fn buildBoolean(node: *const Node) Self {
     return .{.boolean = std.mem.eql(u8, node.val.str, "true") };
   }
   
-  fn buildTime(node: *const Node) !Self {
-    _ = node;
+  fn buildInstant(node: *const Node) !Self {
+    return .{.instant =
+      if (node.tag.? == .local_time)
+        try Instant.fromLocalTime (node.val.str)
+      else
+        try Instant.fromRFC3339   (node.val.str)
+    };
   }
   
   fn buildArray(allocator: std.mem.Allocator, node: *const Node) !Self {
-    _ = allocator;
-    _ = node;
+    var self = init(.array);
+    errdefer self.deinit(allocator);
+    for (node.val.sub.items) |*item| {
+      var next = try buildVal(allocator, item);
+      errdefer next.deinit(allocator);
+      try self.array.append(allocator, next);
+    }
+    return self;
   }
   
   fn buildTable(allocator: std.mem.Allocator, node: *const Node) !Self {
-    _ = allocator;
-    _ = node;
+    var self = init(.table);
+    errdefer self.deinit(allocator);
+    var i: usize = 0;
+    const items = node.val.sub.items;
+    const len = items.len;
+    while (i < len) : (i += 2)
+      try self.buildKeyVal(allocator, &items[i], &items[i + 1]);
+    return self;
   }
 
   fn resolveTable(
@@ -239,11 +242,10 @@ pub const Toml = union(enum) {
   ) !ResolveResult {
     const keys = node.val.sub.items;
     const len = keys.len;
-    if (len == 0) return self;
     var current_table = self;
     for (keys[0..len - 1]) |*key|
       current_table, _ = try current_table.resolveOneByNode(allocator, key, .table);
-    return try current_table.resolveOneByNode(allocator, keys[len - 1], expect);
+    return try current_table.resolveOneByNode(allocator, &keys[len - 1], expect);
   }
 
   fn resolveOneByNode(
@@ -258,7 +260,7 @@ pub const Toml = union(enum) {
       if (std.meta.activeTag(old.*) != expect) return error.TomlError;
       return .{old, true};
     }
-    if (!need_free) key = try allocator.dupe(key);
+    if (!need_free) key = try allocator.dupe(u8, key);
     errdefer allocator.free(key);
     const res = try self.table.getOrPut(allocator, key);
     res.value_ptr.* = init(expect);
@@ -272,47 +274,74 @@ pub const Toml = union(enum) {
     const str = node.val.str;
     const len = str.len;
     return switch (node.tag.?) {
-      .basic_string      => .{ try unescape(allocator, str[1..len - 1]), true  },
-      .ml_basic_string   => .{ try unescape(allocator, str[3..len - 3]), true  },
-      .literal_string    => .{                         str[1..len - 1] , false },
-      .ml_literal_string => .{                         str[3..len - 3] , false },
+      .basic_string      => .{ try esc.unescape(allocator, str[1..len - 1]), true  },
+      .ml_basic_string   => .{ try esc.unescape(allocator, str[3..len - 3]), true  },
+      .literal_string    => .{                             str[1..len - 1] , false },
+      .ml_literal_string => .{                             str[3..len - 3] , false },
+      .unquoted_key      => .{                             str             , false },
       else => unreachable,
     };
   }
 
-  fn unescape(allocator: std.mem.Allocator, str: []const u8) ![]u8 {
-    var res = try allocator.alloc(u8, str.len);
-    errdefer allocator.free(res);
-    var i: usize = 0;
-    var j: usize = 0;
-    while (i < str.len) {
-      const c1 = str[i];
-      if (c1 != '\\') 
-                { res[j] = c1  ; i += 1; j += 1; continue; }
-      const c2 = str[i + 1]; switch (c2) {
-        0x22 => { res[j] = 0x22; i += 2; j += 1; },
-        0x5C => { res[j] = 0x5C; i += 2; j += 1; },
-        0x62 => { res[j] = 0x08; i += 2; j += 1; },
-        0x65 => { res[j] = 0x1B; i += 2; j += 1; },
-        0x66 => { res[j] = 0x0C; i += 2; j += 1; },
-        0x6E => { res[j] = 0x0A; i += 2; j += 1; },
-        0x72 => { res[j] = 0x0D; i += 2; j += 1; },
-        0x74 => { res[j] = 0x09; i += 2; j += 1; },
-        else => {
-          const n = switch (c2) { 0x78 => 2, 0x75 => 4, 0x55 => 8 };
-          const u = try std.fmt.parseUnsigned(u21, str[i + 2..][0..n], 16);
-          i += 2 + n;
-          j += try std.unicode.utf8Encode(u, res[j..][0..4]);
-        }
-      }
+  pub fn format(
+    self: Self,
+    comptime fmt: []const u8,
+    _: std.fmt.FormatOptions,
+    writer: anytype,
+  ) !void {
+    if (std.mem.eql(u8, fmt, "f")) {
+      try self.formatFlat(writer);
+    } else {
+      var gpa = std.heap.GeneralPurposeAllocator(.{}).init;
+      defer _ = gpa.deinit();
+      defer _ = gpa.detectLeaks();
+      const allocator = gpa.allocator();
+      var path = std.ArrayListUnmanaged([]const u8).empty;
+      defer path.deinit(allocator);
+      self.formatToml(allocator, path, writer);
     }
-    return try allocator.realloc(res, j);
+  }
+
+  fn formatToml(
+    self: Self,
+    allocator: std.mem.Allocator,
+    path: std.ArrayListUnmanaged([]const u8),
+    writer: anytype,
+  ) !void {
+    var not_flat = std.ArrayListUnmanaged(Table.Entry).empty;
+    defer not_flat.deinit(allocator);
+    var iter = self.table.iterator();
+    while (iter.next()) |entry| if (entry.value_ptr.isFlat()) {
+      // try writer.print("{s}");
+    } else {
+      try not_flat.append(entry);
+    };
+  }
+
+  fn formatFlat(self: Self, writer: anytype) !void {
+    switch (self) {
+      .string => |string| try writer.print("\"{}\"", .{ esc.escape(string) }),
+      // TODO
+    }
+  }
+
+  fn isFlat(self: Self) bool {
+    return switch (self) {
+      .string, .integer, .float, .boolean, .instant,
+        => true,
+      .array => |array| array: {
+        for (array.items) |item|
+          if (item.isFlat()) break :array true else continue;
+        break :array false;
+      },
+      .table,
+        => false,
+    };
   }
 };
 
 test "toml" {
   std.debug.print("\n", .{});
-  std.debug.print("{d}\n", .{@sizeOf(Toml)});
   const allocator = std.testing.allocator;
   const dir = std.fs.cwd();
   const name = "../../toml-test/valid/spec-example-1.toml";
@@ -320,11 +349,11 @@ test "toml" {
   defer allocator.free(file_text);
   const real_path = try dir.realpathAlloc(allocator, name);
   defer allocator.free(real_path);
-  var root = try Toml.parse(.{
+  var toml = try Toml.build(.{
     .allocator = allocator,
     .file_path = real_path,
     .input = file_text,
   });
-  defer root.deinit(allocator);
-  std.debug.print("{}", .{root});
+  defer toml.deinit(allocator);
+  // std.debug.print("{}", .{root});
 }
