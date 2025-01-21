@@ -4,6 +4,18 @@ const Rule = @import("abnf.zig").Rule;
 
 pub fn Parser(comptime abnf: ABNF) type {
   return struct {
+    allocator: std.mem.Allocator,
+    keeps: std.enums.EnumSet(Tag),
+    input: []const u8,
+
+    cur_node: *Node,
+    init_pos: usize = 0,
+    keep_pos: usize = 0,
+
+    keep_null: bool,
+
+    last_fail: ?Fail = null,
+
     const Self = @This();
     
     pub const Tag = block: {
@@ -80,18 +92,6 @@ pub fn Parser(comptime abnf: ABNF) type {
 
     const rules = abnf.rules;
 
-    allocator: std.mem.Allocator,
-    keeps: std.enums.EnumSet(Tag),
-    input: []const u8,
-
-    cur_node: *Node,
-    init_pos: usize = 0,
-    keep_pos: usize = 0,
-
-    keep_null: bool,
-
-    last_fail: ?Fail = null,
-
     pub fn parse(conf: struct {
       allocator: std.mem.Allocator,
       input: []const u8,
@@ -100,8 +100,8 @@ pub fn Parser(comptime abnf: ABNF) type {
       root_rule: Tag = @enumFromInt(0),
       keep_null: bool = false,
     }) AllocError!Result {
-      var root = Node.initSub(conf.allocator, conf.root_rule);
-      errdefer root.deinit();
+      var root = Node.initSub(conf.root_rule);
+      errdefer root.deinit(conf.allocator);
       var self = Self {
         .allocator = conf.allocator,
         .keeps = std.enums.EnumSet(Tag).initEmpty(),
@@ -112,7 +112,7 @@ pub fn Parser(comptime abnf: ABNF) type {
       for (conf.keeps) |tag| self.keeps.setPresent(tag, true);
       self.parseRule(rules[@intFromEnum(conf.root_rule)]) catch |e|
         if (e != error.ParseError) return AllocError.OutOfMemory;
-      try self.appendStr(true);
+      try self.appendStr(conf.allocator, true);
       if (self.init_pos == self.input.len) self.last_fail = null;
       return .{
         .root = root,
@@ -131,7 +131,7 @@ pub fn Parser(comptime abnf: ABNF) type {
       const old_keep_pos = self.keep_pos;
       errdefer {
         self.cur_node = old_node;
-        self.cur_node.reset(old_len);
+        self.cur_node.reset(self.allocator, old_len);
         self.init_pos = old_init_pos;
         self.keep_pos = old_keep_pos;
       }
@@ -185,14 +185,14 @@ pub fn Parser(comptime abnf: ABNF) type {
 
     fn parseRuleJmp(self: *Self, jmp: Rule.Jmp) ParseError!void {
       if (self.keeps.contains(@enumFromInt(jmp))) {
-        try self.appendStr(false);
+        try self.appendStr(self.allocator, false);
         const old_node = self.cur_node;
-        var node = Node.initSub(self.allocator, @enumFromInt(jmp));
-        errdefer node.deinit();
+        var node = Node.initSub(@enumFromInt(jmp));
+        errdefer node.deinit(self.allocator);
         self.cur_node = &node;
         try self.parseRule(rules[jmp]);
-        try self.appendStr(true);
-        try old_node.val.sub.append(node);
+        try self.appendStr(self.allocator, true);
+        try old_node.val.sub.append(self.allocator, node);
         self.cur_node = old_node;
       } else {
         try self.parseRule(rules[jmp]);
@@ -206,16 +206,16 @@ pub fn Parser(comptime abnf: ABNF) type {
       return error.ParseError;
     }
 
-    fn appendStr(self: *Self, is_end: bool) !void {
+    fn appendStr(self: *Self, allocator: std.mem.Allocator, is_end: bool) !void {
       switch (self.cur_node.val) {
         .str => unreachable,
         .sub => |*sub| if (self.keep_pos < self.init_pos) {
           const str = self.input[self.keep_pos..self.init_pos];
           if (is_end and sub.items.len == 0) {
-            sub.deinit();
+            sub.deinit(allocator);
             self.cur_node.val = .{.str = str};
           } else if (self.keep_null) {
-            try sub.append(Node.initStr(str));
+            try sub.append(allocator, Node.initStr(str));
           }
           self.keep_pos = self.init_pos;
         },

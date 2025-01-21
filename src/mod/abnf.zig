@@ -16,18 +16,18 @@ pub const ABNF = struct {
   };
 
   allocator: std.mem.Allocator,
-  names: std.StringArrayHashMap(usize),
-  rules: std.ArrayList(Rule),
+  names: std.StringArrayHashMapUnmanaged(usize),
+  rules: std.ArrayListUnmanaged(Rule),
 
   pub fn build(conf: Conf) !Self {
     var root = try parse(conf);
-    defer root.deinit();
+    defer root.deinit(conf.allocator);
 
     const allocator = conf.allocator;
     var self = Self {
       .allocator = allocator,
-      .names = std.StringArrayHashMap(usize).init(allocator),
-      .rules = std.ArrayList(Rule).init(allocator),
+      .names = std.StringArrayHashMapUnmanaged(usize).empty,
+      .rules = std.ArrayListUnmanaged(Rule).empty,
     };
 
     errdefer self.deinit();
@@ -47,7 +47,7 @@ pub const ABNF = struct {
       },
       .file_path = conf.file_path,
     });
-    errdefer result.root.deinit();
+    errdefer result.root.deinit(conf.allocator);
 
     if (result.fail) |fail| {
       std.debug.print("{}", .{fail});
@@ -59,9 +59,9 @@ pub const ABNF = struct {
 
   pub fn deinit(self: *Self) void {
     for (self.names.keys()) |name| self.allocator.free(name);
-    self.names.deinit();
-    for (self.rules.items) |rule| rule.deinit(self.allocator);
-    self.rules.deinit();
+    self.names.deinit(self.allocator);
+    for (self.rules.items) |*rule| rule.deinit(self.allocator);
+    self.rules.deinit(self.allocator);
   }
 
   fn buildABNF(self: *Self, root: *Node) !void {
@@ -71,18 +71,18 @@ pub const ABNF = struct {
       const name = item.getStr(0);
       if (self.names.get(name)) |old_id| {
         const prev = root.get(old_id);
-        const cont = root.del(id);
-        defer cont.deinit();
-        try prev.get(1).appendSub(cont.get(1));
+        var cont = root.del(id);
+        defer cont.deinit(self.allocator);
+        try prev.get(1).appendSub(self.allocator, cont.get(1));
       } else {
         const name_dup = try self.allocator.dupe(u8, name);
         errdefer self.allocator.free(name_dup);
-        try self.names.put(name_dup, id);
+        try self.names.put(self.allocator, name_dup, id);
         id += 1;
       }
     }
 
-    try self.rules.ensureTotalCapacityPrecise(id);
+    try self.rules.ensureTotalCapacityPrecise(self.allocator, id);
     for (root.val.sub.items) |*item|
       self.rules.appendAssumeCapacity(try self.buildAlt(item.get(1)));
   }
@@ -90,7 +90,7 @@ pub const ABNF = struct {
   fn buildAlt(self: Self, node: *Node) Error!Rule {
     const sub_len = node.subLen();
     if (sub_len == 1) return try self.buildCon(node.get(0));
-    var res = Rule {.alt = try std.ArrayList(Rule).initCapacity(self.allocator, sub_len)};
+    var res = Rule {.alt = try std.ArrayListUnmanaged(Rule).initCapacity(self.allocator, sub_len)};
     errdefer res.deinit(self.allocator);
     for (node.val.sub.items) |*item|
       res.alt.appendAssumeCapacity(try self.buildCon(item));
@@ -100,7 +100,7 @@ pub const ABNF = struct {
   fn buildCon(self: Self, node: *Node) Error!Rule {
     const sub_len = node.subLen();
     if (sub_len == 1) return try self.buildRep(node.get(0));
-    var res = Rule {.con = try std.ArrayList(Rule).initCapacity(self.allocator, sub_len)};
+    var res = Rule {.con = try std.ArrayListUnmanaged(Rule).initCapacity(self.allocator, sub_len)};
     errdefer res.deinit(self.allocator);
     for (node.val.sub.items) |*item|
       res.con.appendAssumeCapacity(try self.buildRep(item));
@@ -109,7 +109,7 @@ pub const ABNF = struct {
 
   fn buildRep(self: Self, node: *Node) Error!Rule {
     const last = node.get(node.subLen() - 1);
-    const item = switch (last.tag.?) {
+    var item = switch (last.tag.?) {
       .option      => try self.buildOpt(last),
       .rulename    =>     self.buildJmp(last),
       .alternation => try self.buildAlt(last),
@@ -208,8 +208,8 @@ pub const ABNF = struct {
 
 pub const Rule = union(enum) {
   const Self = @This();
-  pub const Alt = std.ArrayList(Rule);
-  pub const Con = std.ArrayList(Rule);
+  pub const Alt = std.ArrayListUnmanaged(Rule);
+  pub const Con = std.ArrayListUnmanaged(Rule);
   pub const Rep = struct {
     min: u8 = 0,
     max: u8 = 0,
@@ -229,11 +229,11 @@ pub const Rule = union(enum) {
   val: Val,
   jmp: Jmp,
 
-  pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
-    switch (self) {
-      .alt, .con => |lst| {
-        for (lst.items) |sub| sub.deinit(allocator);
-        lst.deinit();
+  pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+    switch (self.*) {
+      .alt, .con => |*lst| {
+        for (lst.items) |*sub| sub.deinit(allocator);
+        lst.deinit(allocator);
       },
       .rep => |rep| {
         rep.sub.deinit(allocator);

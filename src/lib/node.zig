@@ -7,13 +7,13 @@ pub fn Node(comptime Tag: type) type {
     tag: ?Tag,
     val: union (enum) {
       str: []const u8,
-      sub: std.ArrayList(Self),
+      sub: std.ArrayListUnmanaged(Self),
     },
 
-    pub fn initSub(allocator: std.mem.Allocator, tag: ?Tag) Self {
+    pub fn initSub(tag: ?Tag) Self {
       return .{
         .tag = tag,
-        .val = .{ .sub = std.ArrayList(Self).init(allocator) },
+        .val = .{ .sub = std.ArrayListUnmanaged(Self).empty },
       };
     }
 
@@ -24,12 +24,12 @@ pub fn Node(comptime Tag: type) type {
       };
     }
 
-    pub fn deinit(self: Self) void {
+    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
       switch (self.val) {
         .str => {},
-        .sub => |sub| {
-          for (sub.items) |item| item.deinit();
-          sub.deinit();
+        .sub => |*sub| {
+          for (sub.items) |*item| item.deinit(allocator);
+          sub.deinit(allocator);
         },
       }
     }
@@ -44,13 +44,13 @@ pub fn Node(comptime Tag: type) type {
       }
     }
 
-    pub fn reset(self: *Self, old_len: usize) void {
+    pub fn reset(self: *Self, allocator: std.mem.Allocator, old_len: usize) void {
       switch (self.val) {
         .str => unreachable,
         .sub => |*sub| if (sub.items.len > old_len) {
           for (old_len..sub.items.len) |i|
-            sub.items[i].deinit();
-          sub.shrinkAndFree(old_len);
+            sub.items[i].deinit(allocator);
+          sub.shrinkAndFree(allocator, old_len);
         },
       }
     }
@@ -67,17 +67,17 @@ pub fn Node(comptime Tag: type) type {
       return self.val.sub.items[i].val.str;
     }
 
-    pub fn add(self: *Self, i: usize, item: Self) !void {
-      try self.val.sub.insert(i, item);
+    pub fn add(self: *Self, allocator: std.mem.Allocator, i: usize, item: Self) !void {
+      try self.val.sub.insert(allocator, i, item);
     }
 
     pub fn del(self: *Self, i: usize) Self {
       return self.val.sub.orderedRemove(i);
     }
 
-    pub fn appendSub(self: *Self, item: *Self) !void {
-      try self.val.sub.appendSlice(item.val.sub.items);
-      item.val.sub.clearAndFree();
+    pub fn appendSub(self: *Self, allocator: std.mem.Allocator, item: *Self) !void {
+      try self.val.sub.appendSlice(allocator, item.val.sub.items);
+      item.val.sub.clearAndFree(allocator);
     }
 
     pub fn format(
