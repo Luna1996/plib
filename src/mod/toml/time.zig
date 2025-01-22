@@ -49,3 +49,56 @@ pub fn toTime(self: Self) zeit.Time {
   time.offset = self.offset;
   return time;
 }
+
+pub fn format(
+  self: Self,
+  comptime _: []const u8,
+  _: std.fmt.FormatOptions,
+  writer: anytype,
+) !void {
+  const time = self.toTime();
+  if (self.timestamp < std.time.ms_per_day and self.timestamp >= 0 and self.offset == 0) {
+    try printLocalTime(time, writer);
+  } else {
+    try printRFC3339(time, writer);
+  }
+}
+
+fn printLocalTime(time: zeit.Time, writer: anytype) !void {
+  try writer.print("{d:02}:{d:02}:{d:02}", .{ time.hour, time.minute, time.second });
+  try printSecFrac(time.millisecond, 1000, writer);
+}
+
+fn printRFC3339(time: zeit.Time, writer: anytype) !void {
+  if (time.year < 0) return error.InvalidTime;
+  try writer.print("{d:04}-{d:02}-{d:02}T{d:02}:{d:02}:{d:02}", .{
+    @as(u32, @intCast(time.year)), @intFromEnum(time.month), time.day,
+    time.hour, time.minute, time.second,
+  });
+  try printSecFrac(time.millisecond, 1000, writer);
+  if (time.offset == 0) {
+    try writer.writeByte('Z');
+  } else {
+    try writer.print("{c}{d:02}:{d:02}", .{
+      @as(u8, if (time.offset > 0) '+' else '-'),
+      @abs(time.offset) / std.time.s_per_hour,
+      (@abs(time.offset) % std.time.s_per_hour) / std.time.s_per_min,
+    });
+  }
+}
+
+fn printSecFrac(frac: usize, max: usize, writer: anytype) !void {
+  if (frac == 0) return;
+  var n = max;
+  var z: usize = 0;
+  while (n != 1){
+    n /= 10;
+    const d: u8 = @intCast((frac / n) % 10);
+    if (d == 0) {
+      z += 1;
+    } else {
+      if (z != 0) try writer.writeByteNTimes('0', z);
+      try  writer.writeByte(d + '0');
+    }
+  }
+}

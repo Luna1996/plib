@@ -70,20 +70,26 @@ fn escapeString(
   while (i.nextCodepointSlice()) |s| {
     const c = std.unicode.utf8Decode(s) catch unreachable;
     if (needEscapeCode(c)) {
-      try writer.writeByte(0x5C);
       switch (c) {
-        0x22 => try writer.writeByte(0x22),
-        0x5C => try writer.writeByte(0x5C),
-        0x08 => try writer.writeByte(0x62),
-        0x1B => try writer.writeByte(0x65),
-        0x0C => try writer.writeByte(0x66),
-        0x0A => try writer.writeByte(0x6E),
-        0x0D => try writer.writeByte(0x72),
-        0x09 => try writer.writeByte(0x74),
+        ' ', '!', '#'...'&', '('...'~' => {
+          try writer.writeByte(@intCast(c));
+          continue;
+        },
         else => {},
       }
+      try writer.writeByte(0x5C);
       if (c <= 0xFF) {
-        try writer.print("x{X:02}", .{c});
+        switch (c) {
+          0x22 => try writer.writeByte(0x22),
+          0x5C => try writer.writeByte(0x5C),
+          0x08 => try writer.writeByte(0x62),
+          0x1B => try writer.writeByte(0x65),
+          0x0C => try writer.writeByte(0x66),
+          0x0A => try writer.writeByte(0x6E),
+          0x0D => try writer.writeByte(0x72),
+          0x09 => try writer.writeByte(0x74),
+          else => try writer.print("x{X:02}", .{c}),
+        }
       } else if (c <= 0xFFFF) {
         try writer.print("u{X:04}", .{c});
       } else if (c <= 0xFFFFFFFF) {
