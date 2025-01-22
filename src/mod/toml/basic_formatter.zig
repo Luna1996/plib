@@ -1,5 +1,5 @@
 const std = @import("std");
-const Self = @import("../toml.zig").Toml;
+const Self = @import("root.zig").Toml;
 const esc = @import("escape.zig");
 
 fn FormatError(comptime Writer: type) type {

@@ -1,6 +1,6 @@
 const std = @import("std");
 const zeit = @import("zeit");
-const Toml = @import("../toml.zig").Toml;
+const Toml = @import("root.zig").Toml;
 const Tag = Toml.Parser.Tag;
 const Node = Toml.Node;
 

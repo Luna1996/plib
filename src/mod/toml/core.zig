@@ -1,5 +1,5 @@
 const std = @import("std");
-const Self = @import("../toml.zig").Toml;
+const Self = @import("root.zig").Toml;
 const Parser = Self.Parser;
 const Node = Self.Node;
 const Tag = Self.Tag;

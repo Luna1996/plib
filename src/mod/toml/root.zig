@@ -17,13 +17,13 @@ pub const Toml = union(enum) {
   pub const Tag = @as(type, std.meta.Tag(Self));
 
   pub const zeit = @import("zeit");
-  pub const Instant = @import("toml/time.zig");
+  pub const Instant = @import("time.zig");
   pub const Array = std.ArrayListUnmanaged(Self);
   pub const Table = std.StringHashMapUnmanaged(Self);
   
-  pub usingnamespace @import("toml/core.zig");
-  pub usingnamespace @import("toml/build_toml.zig");
-  pub usingnamespace @import("toml/basic_formatter.zig");
+  pub usingnamespace @import("core.zig");
+  pub usingnamespace @import("build_toml.zig");
+  pub usingnamespace @import("basic_formatter.zig");
 };
 
 test "toml" {

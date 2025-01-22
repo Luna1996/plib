@@ -100,7 +100,7 @@ const Builder = struct {
 
   fn buildSubMod(self: Self, comptime file: Name) *std.Build.Module {
     const mod_name = @tagName(file);
-    const mod_path = "src/mod/" ++ mod_name ++ ".zig";
+    const mod_path = "src/mod/" ++ mod_name ++ "/root.zig";
     const gen_path = "src/gen/" ++ mod_name ++ ".zig";
 
     const mod_mod = self.b.addModule(mod_name, .{
