@@ -73,7 +73,7 @@ fn buildVal(allocator: std.mem.Allocator, node: *const Node) BuildError!Self {
 
 fn buildString(allocator: std.mem.Allocator, node: *const Node) !Self {
   const str, const need_free = try dupeString(allocator, node);
-  return .{.string = if (need_free) str else try allocator.dupe(u8, str) };
+  return .{.string = if (need_free) str else try allocator.dupe(u8, str)};
 }
 
 fn buildInteger(node: *const Node) !Self {
@@ -85,16 +85,11 @@ fn buildFloat(node: *const Node) !Self {
 }
 
 fn buildBoolean(node: *const Node) Self {
-  return .{.boolean = std.mem.eql(u8, node.val.str, "true") };
+  return .{.boolean = std.mem.eql(u8, node.val.str, "true")};
 }
 
 fn buildInstant(node: *const Node) !Self {
-  return .{.instant =
-    if (node.tag.? == .local_time)
-      try Instant.fromLocalTime (node.val.str)
-    else
-      try Instant.fromRFC3339   (node.val.str)
-  };
+  return .{.instant = try Instant.fromNode(node)};
 }
 
 fn buildArray(allocator: std.mem.Allocator, node: *const Node) !Self {

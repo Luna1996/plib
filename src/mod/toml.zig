@@ -28,6 +28,7 @@ pub const Toml = union(enum) {
 
 test "toml" {
   std.debug.print("\n", .{});
+  std.debug.print("{d}\n", .{@sizeOf(Toml)});
   const allocator = std.testing.allocator;
   const dir = std.fs.cwd();
   const name = "../../toml-test/valid/spec-example-1.toml";

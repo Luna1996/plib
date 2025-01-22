@@ -1,12 +1,28 @@
 const std = @import("std");
 const zeit = @import("zeit");
+const Toml = @import("../toml.zig").Toml;
+const Tag = Toml.Parser.Tag;
+const Node = Toml.Node;
 
 /// millisecond
 timestamp: i64 = 0,
 /// second
 offset:    i32 = 0,
+/// .offset_date_time, .local_date_time, .local_date, .local_time
+tag: Tag = .offset_date_time,
 
 const Self = @This();
+
+pub fn fromNode(node: *const Node) !Self {
+  const tag = node.tag.?;
+  const str = node.val.str;
+  var self = switch (tag) {
+    .local_time => try fromLocalTime(str),
+    else        => try fromRFC3339(str),
+  };
+  self.tag = tag;
+  return self;
+}
 
 pub fn fromRFC3339(str: []const u8) !Self {
   return fromTime(try zeit.Time.fromISO8601(str));
@@ -57,25 +73,16 @@ pub fn format(
   writer: anytype,
 ) !void {
   const time = self.toTime();
-  if (self.timestamp < std.time.ms_per_day and self.timestamp >= 0 and self.offset == 0) {
-    try printLocalTime(time, writer);
-  } else {
-    try printRFC3339(time, writer);
+  if (self.tag != .local_time) {
+    try writer.print("{d:04}-{d:02}-{d:02}", .{
+      @as(u32, @intCast(time.year)), @intFromEnum(time.month), time.day,
+    });
   }
-}
-
-fn printLocalTime(time: zeit.Time, writer: anytype) !void {
+  if (self.tag == .local_date) return;
+  if (self.tag != .local_time) try writer.writeByte('T');
   try writer.print("{d:02}:{d:02}:{d:02}", .{ time.hour, time.minute, time.second });
   try printSecFrac(time.millisecond, 1000, writer);
-}
-
-fn printRFC3339(time: zeit.Time, writer: anytype) !void {
-  if (time.year < 0) return error.InvalidTime;
-  try writer.print("{d:04}-{d:02}-{d:02}T{d:02}:{d:02}:{d:02}", .{
-    @as(u32, @intCast(time.year)), @intFromEnum(time.month), time.day,
-    time.hour, time.minute, time.second,
-  });
-  try printSecFrac(time.millisecond, 1000, writer);
+  if (self.tag != .offset_date_time) return;
   if (time.offset == 0) {
     try writer.writeByte('Z');
   } else {
