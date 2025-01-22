@@ -1,10 +1,28 @@
 {
   "build_options": [
     {
-      "name": "abnf"
+      "name": "step",
+      "value": "test"
     },
     {
-      "name": "toml"
+      "name": "step",
+      "value": "gen_abnf"
+    },
+    {
+      "name": "step",
+      "value": "toml_test"
+    },
+    {
+      "name": "name",
+      "value": "abnf"
+    },
+    {
+      "name": "need",
+      "value": "abnf"
+    },
+    {
+      "name": "need",
+      "value": "toml"
     }
   ]
 }

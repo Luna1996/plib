@@ -66,8 +66,12 @@ fn buildVal(allocator: std.mem.Allocator, ast: *const Ast) BuildError!Self {
     .float             => try buildFloat   (           ast),
     .boolean           =>     buildBoolean (           ast),
     .array             => try buildArray   (allocator, ast),
-    .table             => try buildTable   (allocator, ast),
-    else               =>     buildInstant (           ast),
+    .inline_table      => try buildTable   (allocator, ast),
+    .offset_date_time,
+    .local_date_time,
+    .local_date,
+    .local_time        =>     buildInstant (           ast),
+    else               =>     unreachable,
   };
 }
 

@@ -11,12 +11,10 @@ const Builder = struct {
   const Conf = struct {
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    step: ?Step,
+    step: []Step,
     name: ?Name,
     need: std.enums.EnumSet(Name),
   }; 
-
-
 
   const Step = enum {
     @"test", gen_abnf, toml_test,
@@ -49,18 +47,15 @@ const Builder = struct {
     self.conf.target = self.b.standardTargetOptions(.{});
     self.conf.optimize = self.b.standardOptimizeOption(.{});
 
-    self.conf.step = self.b.option(Step, "step", "Which step to take");
+    self.conf.step = self.b.option([]Step, "step", "Which step to take") orelse &.{};
     self.conf.name = self.b.option(Name, "name", "Input file base name");
 
-    inline for (comptime std.meta.tags(Name)) |tag| {
-      const name = @tagName(tag);
-      self.conf.need.setPresent(tag,
-        self.b.option(bool, name, "Need " ++ name ++ " module") orelse false);
-    }
+    const need = self.b.option([]Name, "need", "list of needed mod names") orelse &.{};
+    for (need) |name| self.conf.need.setPresent(name, true);
 
     self.conf.need.setPresent(.plib, true);
 
-    if (self.conf.step) |step| switch (step) {
+    for (self.conf.step) |step| switch (step) {
       .@"test" => if (self.conf.name) |name| 
         self.conf.need.setPresent(name, true),
       .gen_abnf =>
@@ -73,11 +68,11 @@ const Builder = struct {
   fn build(b: *std.Build) void {
     var self = init(b);
     
-    for (std.meta.tags(Name)) |name| {
+    for (std.meta.tags(Name)) |name|
       if (self.conf.need.contains(name))
         self.mods.set(name, mod_fns.get(name)(self));
-    }
-    if (self.conf.step) |step|
+
+    for (self.conf.step) |step|
       step_fns.get(step)(self);
   }
 
@@ -118,9 +113,9 @@ const Builder = struct {
       .root_source_file = self.b.path(gen_path),
     });
     
-    gen_mod.addImport("plib", self.mods.get(.plib));
     mod_mod.addImport("gen", gen_mod);
-    mod_mod.addImport("plib", self.mods.get(.plib));
+    self.addImport(gen_mod, .plib);
+    self.addImport(mod_mod, .plib);
 
     return mod_mod;
   }
@@ -152,10 +147,9 @@ const Builder = struct {
       .optimize = self.conf.optimize,
       .root_source_file = self.b.path("src/exe/gen_abnf.zig"),
     });
-    exe.root_module.addImport("abnf", self.mods.get(.abnf));
+    self.addImport(exe.root_module, .abnf);
 
     const run = self.b.addRunArtifact(exe);
-    run.setCwd(self.b.path("."));
     run.addArg(@tagName(name));
     run.stdio = .inherit;
 
@@ -164,20 +158,35 @@ const Builder = struct {
 
   fn buildAllTomlTest(self: Self) void {
     self.buildOneTomlTest("decoder");
-    self.buildOneTomlTest("encoder");
+    // self.buildOneTomlTest("encoder");
   }
 
   fn buildOneTomlTest(self: Self, comptime name: []const u8) void {
-    const exe_name = "toml_" + name;
+    const exe_name = "toml_" ++ name;
+    
     const test_exe = self.b.addExecutable(.{
       .name = exe_name,
       .target = self.conf.target,
       .optimize = self.conf.optimize,
       .root_source_file = self.b.path("src/exe/toml_test.zig"),
     });
-    test_exe.entry = .{.symbol_name = name};
+    self.addImport(test_exe.root_module, .toml);
+    
+    const test_opt = self.b.addOptions();
+    test_opt.addOption([]const u8, "name", name);
+    test_exe.root_module.addOptions("opts", test_opt);
+    
     const run_step = std.Build.Step.Run.create(self.b, exe_name);
-    // TODO
+    run_step.addArg("toml-test");
+    run_step.addArtifactArg(test_exe);
+    if (std.mem.eql(u8, name, "encoder"))
+    run_step.addArg("-" ++ name);
+    
+    self.b.default_step.dependOn(&run_step.step);
+  }
+
+  fn addImport(self: Self, mod: *std.Build.Module, name: Name) void {
+    mod.addImport(@tagName(name), self.mods.get(name));
   }
 };
 
