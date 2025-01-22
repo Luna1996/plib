@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn Node(comptime Tag: type) type {
+pub fn Ast(comptime Tag: type) type {
   return struct {
     const Self = @This();
 

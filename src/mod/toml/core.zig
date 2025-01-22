@@ -1,7 +1,7 @@
 const std = @import("std");
 const Self = @import("root.zig").Toml;
 const Parser = Self.Parser;
-const Node = Self.Node;
+const Ast = Self.Ast;
 const Tag = Self.Tag;
 const Array = Self.Array;
 const Table = Self.Table;
@@ -13,7 +13,7 @@ const Conf = struct {
   edit_inplace: bool = false,
 };
 
-pub fn parse(conf: Conf) !Node {
+pub fn parse(conf: Conf) !Ast {
   var result = try Parser.parse(.{
     .allocator = conf.allocator,
     .input = conf.input,

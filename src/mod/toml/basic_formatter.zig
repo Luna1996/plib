@@ -33,12 +33,20 @@ fn printToml(
 ) !void {
   var not_flat = std.ArrayListUnmanaged(Self.Table.Entry).empty;
   defer not_flat.deinit(allocator);
+
+  var flag = path == null or path.?.items.len == 0;
   
   var iter = self.table.iterator();
   while (iter.next()) |entry| if (
     path == null or
     isFlat(entry.value_ptr)
   ) {
+    if (!flag) {
+      try writer.writeByte('[');
+      try printMulKey(path.?, writer);
+      try writer.writeAll("]\n");
+      flag = true;
+    }
     try printKeyVal(entry.value_ptr, entry.key_ptr.*, writer);
     try writer.writeByte('\n');
   } else {
@@ -59,10 +67,7 @@ fn printToml(
     .table => {
       const len = path.?.items.len;
       try path.?.append(allocator, entry.key_ptr.*);
-      try writer.writeByte('[');
-      try printMulKey(path.?, writer);
-      const item = try advenceTableUntilNotSingleValue(entry.value_ptr, allocator, path.?, writer);
-      try writer.writeAll("]\n");
+      const item = try advenceTableUntilNotSingleValue(entry.value_ptr, allocator, path.?);
       try printToml(item, allocator, path, writer);
       path.?.items.len = len;
     },
@@ -150,16 +155,13 @@ fn advenceTableUntilNotSingleValue(
   self: *const Self,
   allocator: std.mem.Allocator,
   path: *std.ArrayListUnmanaged([]const u8),
-  writer: anytype,
 ) !*const Self {
   if (self.table.count() != 1) return self;
   var iter = self.table.iterator();
   const entry = iter.next().?;
   const key = entry.key_ptr.*;
   const val = entry.value_ptr;
-  if (val.isFlat()) return self;
+  if (isFlat(val)) return self;
   try path.append(allocator, key);
-  try writer.writeByte('.');
-  try printOneKey(key, writer);
-  return try advenceTableUntilNotSingleValue(val, allocator, path, writer);
+  return try advenceTableUntilNotSingleValue(val, allocator, path);
 }

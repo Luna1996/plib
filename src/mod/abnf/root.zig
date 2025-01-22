@@ -2,7 +2,7 @@ const std = @import("std");
 const plib = @import("plib");
 const Parser = plib.Parser(@import("gen").abnf);
 const Tag = Parser.Tag;
-const Node = Parser.Node;
+const Ast = Parser.Ast;
 
 pub const ABNF = struct {
   const Self = @This();
@@ -36,7 +36,7 @@ pub const ABNF = struct {
     return self;
   }
 
-  pub fn parse(conf: Conf) !Node {
+  pub fn parse(conf: Conf) !Ast {
     var result = try Parser.parse(.{
       .allocator = conf.allocator,
       .input = conf.input,
@@ -64,7 +64,7 @@ pub const ABNF = struct {
     self.rules.deinit(self.allocator);
   }
 
-  fn buildABNF(self: *Self, root: *Node) !void {
+  fn buildABNF(self: *Self, root: *Ast) !void {
     var id: usize = 0;
     while (id < root.subLen()) {
       const item = root.get(id);
@@ -87,28 +87,28 @@ pub const ABNF = struct {
       self.rules.appendAssumeCapacity(try self.buildAlt(item.get(1)));
   }
 
-  fn buildAlt(self: Self, node: *Node) Error!Rule {
-    const sub_len = node.subLen();
-    if (sub_len == 1) return try self.buildCon(node.get(0));
+  fn buildAlt(self: Self, ast: *Ast) Error!Rule {
+    const sub_len = ast.subLen();
+    if (sub_len == 1) return try self.buildCon(ast.get(0));
     var res = Rule {.alt = try std.ArrayListUnmanaged(Rule).initCapacity(self.allocator, sub_len)};
     errdefer res.deinit(self.allocator);
-    for (node.val.sub.items) |*item|
+    for (ast.val.sub.items) |*item|
       res.alt.appendAssumeCapacity(try self.buildCon(item));
     return res;
   }
 
-  fn buildCon(self: Self, node: *Node) Error!Rule {
-    const sub_len = node.subLen();
-    if (sub_len == 1) return try self.buildRep(node.get(0));
+  fn buildCon(self: Self, ast: *Ast) Error!Rule {
+    const sub_len = ast.subLen();
+    if (sub_len == 1) return try self.buildRep(ast.get(0));
     var res = Rule {.con = try std.ArrayListUnmanaged(Rule).initCapacity(self.allocator, sub_len)};
     errdefer res.deinit(self.allocator);
-    for (node.val.sub.items) |*item|
+    for (ast.val.sub.items) |*item|
       res.con.appendAssumeCapacity(try self.buildRep(item));
     return res;
   }
 
-  fn buildRep(self: Self, node: *Node) Error!Rule {
-    const last = node.get(node.subLen() - 1);
+  fn buildRep(self: Self, ast: *Ast) Error!Rule {
+    const last = ast.get(ast.subLen() - 1);
     var item = switch (last.tag.?) {
       .option      => try self.buildOpt(last),
       .rulename    =>     self.buildJmp(last),
@@ -121,10 +121,10 @@ pub const ABNF = struct {
     };
     errdefer item.deinit(self.allocator);
 
-    if (node.subLen() == 2) {
+    if (ast.subLen() == 2) {
       var rule = Rule {.rep = .{.sub = try self.allocator.create(Rule)}};
       rule.rep.sub.* = item;
-      const str = node.getStr(0);
+      const str = ast.getStr(0);
       if (std.mem.indexOfScalar(u8, str, '*')) |sep| {
         if (sep > 0)
           rule.rep.min = std.fmt.parseUnsigned(u8, str[0..sep]   , 10) catch unreachable;
@@ -141,28 +141,28 @@ pub const ABNF = struct {
     }
   }
 
-  fn buildOpt(self: Self, node: *Node) Error!Rule {
+  fn buildOpt(self: Self, ast: *Ast) Error!Rule {
     const rule = Rule{.rep = .{
       .max = 1,
       .sub = try self.allocator.create(Rule),
     }};
     errdefer self.allocator.destroy(rule.rep.sub);
-    rule.rep.sub.* = try self.buildAlt(node.get(0));
+    rule.rep.sub.* = try self.buildAlt(ast.get(0));
     return rule;
   }
 
-  fn buildJmp(self: Self, node: *Node) Rule {
-    return .{.jmp = self.names.get(node.val.str).?};
+  fn buildJmp(self: Self, ast: *Ast) Rule {
+    return .{.jmp = self.names.get(ast.val.str).?};
   }
 
-  fn buildStr(self: Self, node: *Node) Error!Rule {
-    const str = node.val.str;
+  fn buildStr(self: Self, ast: *Ast) Error!Rule {
+    const str = ast.val.str;
     return .{.str = try self.allocator.dupe(u8, str[1..str.len - 1])};
   }
 
-  fn buildNum(self: Self, node: *Node) Error!Rule {
-    const str = node.val.str[2..];
-    const base: u8 = switch (node.tag.?) {
+  fn buildNum(self: Self, ast: *Ast) Error!Rule {
+    const str = ast.val.str[2..];
+    const base: u8 = switch (ast.tag.?) {
       .bin_val => 2,
       .dec_val => 10,
       .hex_val => 16,
@@ -203,6 +203,26 @@ pub const ABNF = struct {
     for (self.rules.items) |rule|
       try writer.print("    {},\n", .{rule});
     try writer.writeAll("  }\n};");
+  }
+
+  pub fn gen_abnf(allocator: std.mem.Allocator, raw_path: []const u8, gen_path: []const u8) !void {
+    const raw_text = try std.fs.cwd().readFileAlloc(allocator, raw_path, std.math.maxInt(usize));
+    defer allocator.free(raw_text);
+  
+    const raw_real_path = try std.fs.cwd().realpathAlloc(allocator, raw_path);
+    defer allocator.free(raw_real_path);
+  
+    var abnf = try build(.{
+      .allocator = allocator, 
+      .file_path = raw_real_path,
+      .input = raw_text,
+    });
+    defer abnf.deinit();
+
+    const gen_file = try std.fs.cwd().createFile(gen_path, .{});
+    defer gen_file.close();
+
+    try gen_file.writer().print("{}", .{abnf});
   }
 };
 

@@ -19,12 +19,13 @@ const Builder = struct {
 
 
   const Step = enum {
-    @"test", gen_abnf,
+    @"test", gen_abnf, toml_test,
   };
 
   const step_fns = std.enums.EnumArray(Step, *const fn(Self) void).init(.{
     .@"test" = buildTest,
     .gen_abnf = buildGenABNF,
+    .toml_test = buildAllTomlTest,
   });
 
   const Name = enum {
@@ -64,6 +65,8 @@ const Builder = struct {
         self.conf.need.setPresent(name, true),
       .gen_abnf =>
         self.conf.need.setPresent(.abnf, true),
+      .toml_test =>
+        self.conf.need.setPresent(.toml, true),
     };
   }
 
@@ -157,6 +160,24 @@ const Builder = struct {
     run.stdio = .inherit;
 
     step.dependOn(&run.step);
+  }
+
+  fn buildAllTomlTest(self: Self) void {
+    self.buildOneTomlTest("decoder");
+    self.buildOneTomlTest("encoder");
+  }
+
+  fn buildOneTomlTest(self: Self, comptime name: []const u8) void {
+    const exe_name = "toml_" + name;
+    const test_exe = self.b.addExecutable(.{
+      .name = exe_name,
+      .target = self.conf.target,
+      .optimize = self.conf.optimize,
+      .root_source_file = self.b.path("src/exe/toml_test.zig"),
+    });
+    test_exe.entry = .{.symbol_name = name};
+    const run_step = std.Build.Step.Run.create(self.b, exe_name);
+    // TODO
   }
 };
 

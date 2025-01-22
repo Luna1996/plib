@@ -12,7 +12,7 @@ pub const Toml = union(enum) {
   const Self = @This();
   
   pub const Parser = @import("plib").Parser(@import("gen").abnf);
-  pub const Node = Parser.Node;
+  pub const Ast = Parser.Ast;
 
   pub const Tag = @as(type, std.meta.Tag(Self));
 
@@ -28,7 +28,6 @@ pub const Toml = union(enum) {
 
 test "toml" {
   std.debug.print("\n", .{});
-  std.debug.print("{d}\n", .{@sizeOf(Toml)});
   const allocator = std.testing.allocator;
   const dir = std.fs.cwd();
   const name = "../../toml-test/valid/spec-example-1.toml";
@@ -44,3 +43,7 @@ test "toml" {
   defer toml.deinit(allocator);
   std.debug.print("{}", .{toml});
 }
+
+// test {
+//   _ = @import("toml_test.zig");
+// }

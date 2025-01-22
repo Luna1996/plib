@@ -2,7 +2,7 @@ const std = @import("std");
 const zeit = @import("zeit");
 const Toml = @import("root.zig").Toml;
 const Tag = Toml.Parser.Tag;
-const Node = Toml.Node;
+const Ast = Toml.Ast;
 
 /// millisecond
 timestamp: i64 = 0,
@@ -13,9 +13,9 @@ tag: Tag = .offset_date_time,
 
 const Self = @This();
 
-pub fn fromNode(node: *const Node) !Self {
-  const tag = node.tag.?;
-  const str = node.val.str;
+pub fn fromAst(ast: *const Ast) !Self {
+  const tag = ast.tag.?;
+  const str = ast.val.str;
   var self = switch (tag) {
     .local_time => try fromLocalTime(str),
     else        => try fromRFC3339(str),

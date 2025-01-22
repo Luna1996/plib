@@ -8,7 +8,7 @@ pub fn Parser(comptime abnf: ABNF) type {
     keeps: std.enums.EnumSet(Tag),
     input: []const u8,
 
-    cur_node: *Node,
+    cur_ast: *Ast,
     init_pos: usize = 0,
     keep_pos: usize = 0,
 
@@ -29,7 +29,7 @@ pub fn Parser(comptime abnf: ABNF) type {
       }}));
     };
     
-    pub const Node = @import("node.zig").Node(Tag);
+    pub const Ast = @import("ast.zig").Ast(Tag);
 
     const AllocError = std.mem.Allocator.Error;
     const ParseError = error { ParseError } || AllocError;
@@ -86,7 +86,7 @@ pub fn Parser(comptime abnf: ABNF) type {
     };
 
     const Result = struct {
-      root: Node,
+      root: Ast,
       fail: ?FailWithContext,
     };
 
@@ -100,13 +100,13 @@ pub fn Parser(comptime abnf: ABNF) type {
       root_rule: Tag = @enumFromInt(0),
       keep_null: bool = false,
     }) AllocError!Result {
-      var root = Node.initSub(conf.root_rule);
+      var root = Ast.initSub(conf.root_rule);
       errdefer root.deinit(conf.allocator);
       var self = Self {
         .allocator = conf.allocator,
         .keeps = std.enums.EnumSet(Tag).initEmpty(),
         .input = conf.input,
-        .cur_node = &root,
+        .cur_ast = &root,
         .keep_null = conf.keep_null,
       };
       for (conf.keeps) |tag| self.keeps.setPresent(tag, true);
@@ -125,13 +125,13 @@ pub fn Parser(comptime abnf: ABNF) type {
     }
 
     fn parseRule(self: *Self, rule: Rule) ParseError!void {
-      const old_node = self.cur_node;
-      const old_len = self.cur_node.val.sub.items.len;
+      const old_ast = self.cur_ast;
+      const old_len = self.cur_ast.val.sub.items.len;
       const old_init_pos = self.init_pos;
       const old_keep_pos = self.keep_pos;
       errdefer {
-        self.cur_node = old_node;
-        self.cur_node.reset(self.allocator, old_len);
+        self.cur_ast = old_ast;
+        self.cur_ast.reset(self.allocator, old_len);
         self.init_pos = old_init_pos;
         self.keep_pos = old_keep_pos;
       }
@@ -186,14 +186,14 @@ pub fn Parser(comptime abnf: ABNF) type {
     fn parseRuleJmp(self: *Self, jmp: Rule.Jmp) ParseError!void {
       if (self.keeps.contains(@enumFromInt(jmp))) {
         try self.appendStr(self.allocator, false);
-        const old_node = self.cur_node;
-        var node = Node.initSub(@enumFromInt(jmp));
-        errdefer node.deinit(self.allocator);
-        self.cur_node = &node;
+        const old_ast = self.cur_ast;
+        var ast = Ast.initSub(@enumFromInt(jmp));
+        errdefer ast.deinit(self.allocator);
+        self.cur_ast = &ast;
         try self.parseRule(rules[jmp]);
         try self.appendStr(self.allocator, true);
-        try old_node.val.sub.append(self.allocator, node);
-        self.cur_node = old_node;
+        try old_ast.val.sub.append(self.allocator, ast);
+        self.cur_ast = old_ast;
       } else {
         try self.parseRule(rules[jmp]);
       }
@@ -207,15 +207,15 @@ pub fn Parser(comptime abnf: ABNF) type {
     }
 
     fn appendStr(self: *Self, allocator: std.mem.Allocator, is_end: bool) !void {
-      switch (self.cur_node.val) {
+      switch (self.cur_ast.val) {
         .str => unreachable,
         .sub => |*sub| if (self.keep_pos < self.init_pos) {
           const str = self.input[self.keep_pos..self.init_pos];
           if (is_end and sub.items.len == 0) {
             sub.deinit(allocator);
-            self.cur_node.val = .{.str = str};
+            self.cur_ast.val = .{.str = str};
           } else if (self.keep_null) {
-            try sub.append(allocator, Node.initStr(str));
+            try sub.append(allocator, Ast.initStr(str));
           }
           self.keep_pos = self.init_pos;
         },
