@@ -11,14 +11,15 @@ const BuildError = error {TomlError, DateTimeError}
   || std.fmt.ParseFloatError
   || error { Utf8CannotEncodeSurrogateHalf, CodepointTooLarge };
 
-var closed: std.AutoHashMapUnmanaged(*Self, void) = undefined;
+const State = enum(u1) {explicit, implicit};
+const Visits = std.AutoHashMapUnmanaged(*Self, State);
 
 pub fn buildToml(allocator: std.mem.Allocator, ast: *const Ast) !Self {
   var root = Self.init(.table);
   errdefer root.deinit(allocator);
 
-  closed = std.AutoHashMapUnmanaged(*Self, void).empty;
-  defer closed.deinit(allocator);
+  var visits = Visits.empty;
+  defer visits.deinit(allocator);
 
   if (std.meta.activeTag(ast.val) == .str) return root;
 
@@ -31,15 +32,15 @@ pub fn buildToml(allocator: std.mem.Allocator, ast: *const Ast) !Self {
     const item = &items[i];
     switch (item.tag.?) {
       .key => { 
-        try buildKeyVal(self, allocator, item, &items[i + 1]);
+        try buildKeyVal(self, allocator, item, &items[i + 1], &visits);
         i += 2;
       },
       .std_table => {
-        self = try resolveTable(&root, allocator, item);
+        self = try resolveTable(&root, allocator, item, &visits);
         i += 1;
       },
       .array_table => {
-        self = try resolveArray(&root, allocator, item);
+        self = try resolveArray(&root, allocator, item, &visits);
         i += 1;
       },
       else => unreachable,
@@ -54,17 +55,17 @@ fn buildKeyVal(
   allocator: std.mem.Allocator,
   key: *const Ast,
   val: *const Ast,
+  visits: *Visits,
 ) !void {
-  var exist = false;
-  const item = try resolveMulByAst(self, allocator, key, &exist, .integer);
-  if (exist) return error.TomlError;
-  const res = try closed.getOrPut(allocator, item);
-  if (res.found_existing) return error.TomlError;
-  res.key_ptr.* = item;
-  item.* = try buildVal(allocator, val);
+  const item = try resolveMulByAst(self, allocator, key, visits, .explicit, .integer);
+  item.* = try buildVal(allocator, val, visits);
 }
 
-fn buildVal(allocator: std.mem.Allocator, ast: *const Ast) BuildError!Self {
+fn buildVal(
+  allocator: std.mem.Allocator,
+  ast: *const Ast,
+  visits: *Visits,
+) BuildError!Self {
   return switch (ast.tag.?) {
     .basic_string,
     .literal_string,
@@ -73,8 +74,8 @@ fn buildVal(allocator: std.mem.Allocator, ast: *const Ast) BuildError!Self {
     .integer           => try buildInteger (           ast),
     .float             => try buildFloat   (           ast),
     .boolean           =>     buildBoolean (           ast),
-    .array             => try buildArray   (allocator, ast),
-    .inline_table      => try buildTable   (allocator, ast),
+    .array             => try buildArray   (allocator, ast, visits),
+    .inline_table      => try buildTable   (allocator, ast, visits),
     .offset_date_time,
     .local_date_time,
     .local_date,
@@ -104,19 +105,19 @@ fn buildDateTime(ast: *const Ast) !Self {
   return .{.datetime = try DateTime.fromRFC3339(ast.val.str)};
 }
 
-fn buildArray(allocator: std.mem.Allocator, ast: *const Ast) !Self {
+fn buildArray(allocator: std.mem.Allocator, ast: *const Ast, visits: *Visits) !Self {
   var self = Self.init(.array);
   errdefer self.deinit(allocator);
   if (std.meta.activeTag(ast.val) == .str) return self;
   for (ast.val.sub.items) |*item| {
-    var next = try buildVal(allocator, item);
+    var next = try buildVal(allocator, item, visits);
     errdefer next.deinit(allocator);
     try self.array.append(allocator, next);
   }
   return self;
 }
 
-fn buildTable(allocator: std.mem.Allocator, ast: *const Ast) !Self {
+fn buildTable(allocator: std.mem.Allocator, ast: *const Ast, visits: *Visits) !Self {
   var self = Self.init(.table);
   errdefer self.deinit(allocator);
   if (std.meta.activeTag(ast.val) == .str) return self;
@@ -124,27 +125,26 @@ fn buildTable(allocator: std.mem.Allocator, ast: *const Ast) !Self {
   const items = ast.val.sub.items;
   const len = items.len;
   while (i < len) : (i += 2)
-    try buildKeyVal(&self, allocator, &items[i], &items[i + 1]);
+    try buildKeyVal(&self, allocator, &items[i], &items[i + 1], visits);
   return self;
 }
 
 fn resolveTable(
   self: *Self,
   allocator: std.mem.Allocator,
-  ast: *const Ast
+  ast: *const Ast,
+  visits: *Visits,
 ) !*Self {
-  var exist = false;
-  const next = try resolveMulByAst(self, allocator, ast.get(0), &exist, .table);
-  return if (exist) error.TomlError else next;
+  return try resolveMulByAst(self, allocator, ast.get(0), visits, .explicit, .table);
 }
 
 fn resolveArray(
   self: *Self,
   allocator: std.mem.Allocator,
-  ast: *const Ast
+  ast: *const Ast,
+  visits: *Visits,
 ) !*Self {
-  var exist = false;
-  const next = try resolveMulByAst(self, allocator, ast.get(0), &exist, .array);
+  const next = try resolveMulByAst(self, allocator, ast.get(0), visits, .implicit, .array);
   const item = try next.array.addOne(allocator);
   item.* = Self.init(.table);
   return item;
@@ -154,39 +154,45 @@ fn resolveMulByAst(
   self: *Self,
   allocator: std.mem.Allocator,
   ast: *const Ast,
-  exist: *bool,
+  visits: *Visits,
+  comptime state: State,
   comptime expect: Tag,
 ) !*Self {
   const keys = ast.val.sub.items;
   const len = keys.len;
   var current_table = self;
-  for (keys[0..len - 1]) |*key|
-    current_table = try resolveOneByAst(current_table, allocator, key, exist, .table);
-  return try resolveOneByAst(current_table, allocator, &keys[len - 1], exist, expect);
+  for (keys[0..len - 1]) |*key| {
+    current_table = try resolveOneByAst(current_table, allocator, key, visits, .implicit, .table);
+    _ = try visits.getOrPutValue(allocator, current_table, .implicit);
+  }
+  current_table = try resolveOneByAst(current_table, allocator, &keys[len - 1], visits, state, expect);
+  try visits.put(allocator, current_table, state);
+  return current_table;
 }
 
 fn resolveOneByAst(
   self: *Self,
   allocator: std.mem.Allocator,
   ast: *const Ast,
-  exist: *bool,
+  visits: *Visits,
+  comptime state: State,
   comptime expect: Tag,
 ) !*Self {
-  if (closed.contains(self)) return error.TomlError;
   var key, const need_free = try esc.unescape(allocator, ast);
   if (self.table.getPtr(key)) |val| {
-    exist.* = true;
     if (need_free) allocator.free(key);
+    const is_close = visits.get(val) == .explicit;
+    if (is_close and state == .explicit)
+      return error.TomlError;
     const tag = std.meta.activeTag(val.*);
     if (tag == expect) return val;
-    if (tag == .array) {
+    if (tag == .array and !is_close) {
       const new = &val.array.items[val.array.items.len - 1];
       if (std.meta.activeTag(new.*) == expect)
         return new;
     }
     return error.TomlError;
   }
-  exist.* = false;
   if (!need_free) key = try allocator.dupe(u8, key);
   errdefer allocator.free(key);
   const res = try self.table.getOrPut(allocator, key);
