@@ -1,33 +1,107 @@
 const std = @import("std");
+const Ast = @import("root.zig").Toml.Ast;
 
-pub fn unescape(allocator: std.mem.Allocator, str: []const u8) ![]u8 {
-  var res = try allocator.alloc(u8, str.len);
-  errdefer allocator.free(res);
-  var i: usize = 0;
-  var j: usize = 0;
-  while (i < str.len) {
-    const c1 = str[i];
-    if (c1 != '\\') 
-              { res[j] = c1  ; i += 1; j += 1; continue; }
-    const c2 = str[i + 1]; switch (c2) {
-      0x22 => { res[j] = 0x22; i += 2; j += 1; },
-      0x5C => { res[j] = 0x5C; i += 2; j += 1; },
-      0x62 => { res[j] = 0x08; i += 2; j += 1; },
-      0x65 => { res[j] = 0x1B; i += 2; j += 1; },
-      0x66 => { res[j] = 0x0C; i += 2; j += 1; },
-      0x6E => { res[j] = 0x0A; i += 2; j += 1; },
-      0x72 => { res[j] = 0x0D; i += 2; j += 1; },
-      0x74 => { res[j] = 0x09; i += 2; j += 1; },
-      else => {
-        const n: usize = switch (c2) { 0x78 => 2, 0x75 => 4, 0x55 => 8, else => unreachable };
-        const u = try std.fmt.parseUnsigned(u21, str[i + 2..][0..n], 16);
-        i += 2 + n;
-        j += try std.unicode.utf8Encode(u, res[j..][0..4]);
-      }
-    }
-  }
-  return try allocator.realloc(res, j);
+pub fn unescape(allocator: std.mem.Allocator, ast: *const Ast) !std.meta.Tuple(&.{[]const u8, bool}) {
+  if (ast.tag.? == .unquoted_key) return .{ast.val.str, false};
+  var help = Unescaper.init(allocator, ast);
+  try help.work();
+  return if (help.new) |new| .{new, true} else .{help.old, false};
 }
+
+const Unescaper = struct {
+  allocator: std.mem.Allocator,
+  is_mul: bool = undefined,
+  is_lit: bool = undefined,
+  old: []const u8 = undefined,
+  new: ?[]u8 = null,
+  old_pos: usize = 0,
+  new_pos: usize = 0,
+
+  const Self = @This();
+
+  inline fn init(allocator: std.mem.Allocator, ast: *const Ast) Self {
+    var self = Self {.allocator = allocator};
+    self.is_mul, self.is_lit = switch (ast.tag.?) {
+      .basic_string      => .{false, false},
+      .ml_basic_string   => .{true , false},
+      .literal_string    => .{false, true },
+      .ml_literal_string => .{true , true },
+      else => unreachable,
+    };
+
+    const str = ast.val.str;
+    const len = str.len;
+    self.old =
+           if (!self.is_mul)   str[1..len-1]
+      else if (str[3] == '\n') str[4..len-3]
+      else                     str[3..len-3];
+    return self;
+  }
+
+  inline fn work(self: *Self) !void {
+    if (self.is_lit) return;
+    errdefer if (self.new) |new| self.allocator.free(new);
+    while (self.old_pos < self.old.len) try self.step();
+    if (self.new) |new| self.new = try self.allocator.realloc(new, self.new_pos);
+  }
+
+  inline fn step(self: *Self) !void {
+    const ne_len = skipNE(self.old[self.old_pos..]);
+    if (self.new == null)
+      self.new = try self.allocator.alloc(u8, self.old.len);
+    const new = self.new.?;
+
+    if (ne_len > 0) {
+      @memcpy(new[self.new_pos..][0..ne_len], self.old[self.old_pos..][0..ne_len]);
+      self.old_pos += ne_len;
+      self.new_pos += ne_len;
+    }
+
+    if (self.old_pos == self.old.len) return;
+    const c = self.old[self.old_pos + 1];
+    self.old_pos += 2;
+
+    var uni_len: usize = 0;
+    
+    switch (c) {
+      0x22 => new[self.new_pos] = 0x22,
+      0x5C => new[self.new_pos] = 0x5C,
+      0x62 => new[self.new_pos] = 0x08,
+      0x66 => new[self.new_pos] = 0x0C,
+      0x6E => new[self.new_pos] = 0x0A,
+      0x72 => new[self.new_pos] = 0x0D,
+      0x74 => new[self.new_pos] = 0x09,
+      0x75 => uni_len = 4,
+      0x55 => uni_len = 8,
+      else => {
+        self.old_pos += skipWS(self.old[self.old_pos..]);
+        return;
+      },
+    }
+
+    if (uni_len == 0) {
+      self.new_pos += 1;
+      return;
+    }
+
+    const unicode = try std.fmt.parseUnsigned(u21, self.old[self.old_pos..][0..uni_len], 16);
+    self.old_pos += uni_len;
+    self.new_pos += try std.unicode.utf8Encode(unicode, new[self.new_pos..][0..4]);
+  }
+
+  inline fn skipWS(s: []const u8) usize {
+    for (s, 0..) |c, i| switch (c) {
+      0x20, 0x0A, 0x0D, 0x09 => continue,
+      else => return i,
+    };
+    return s.len;
+  }
+
+  inline fn skipNE(s: []const u8) usize {
+    for (s, 0..) |c, i| if (c == 0x5C) {return i;};
+    return s.len;
+  }
+};
 
 pub fn needEscape(str: []const u8) bool {
   const view = std.unicode.Utf8View.initUnchecked(str);
@@ -41,14 +115,6 @@ pub fn needEscape(str: []const u8) bool {
 pub fn needEscapeCode(code: u21) bool {
   return switch (code) {
     'A'...'Z', 'a'...'z', '0'...'9', '-', '_',
-    0xB2, 0xB3, 0xB9, 0xBC, 0xBD,
-    0xBE, 0xC0...0xD6, 0xD8...0xF6,
-    0x00F8...0x037D, 0x037F...0x1FFF,
-    0x200C,  0x200D, 0x203F...0x2040,
-    0x2070...0x218F, 0x2460...0x24FF,
-    0x2C00...0x2FEF, 0x3001...0xD7FF,
-    0xF900...0xFDCF, 0xFDF0...0xFFFD,
-    0x10000...0xEFFFF,
     => false,
     else
     => true,
@@ -88,7 +154,7 @@ fn escapeString(
           0x0A => try writer.writeByte(0x6E),
           0x0D => try writer.writeByte(0x72),
           0x09 => try writer.writeByte(0x74),
-          else => try writer.print("x{X:02}", .{c}),
+          else => try writer.print("u{X:04}", .{c}),
         }
       } else if (c <= 0xFFFF) {
         try writer.print("u{X:04}", .{c});

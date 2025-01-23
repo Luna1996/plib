@@ -44,13 +44,13 @@ pub fn build(conf: Conf) !Self {
 
 pub fn init(comptime tag: Tag) Self {
   return switch (tag) {
-    .string  => .{ .string  = ""          },
-    .integer => .{ .integer = 0           },
-    .float   => .{ .float   = 0           },
-    .boolean => .{ .boolean = false       },
-    .instant => .{ .instant = .{}         },
-    .array   => .{ .array   = Array.empty },
-    .table   => .{ .table   = Table.empty },
+    .string   => .{ .string   = ""          },
+    .integer  => .{ .integer  = 0           },
+    .float    => .{ .float    = 0           },
+    .boolean  => .{ .boolean  = false       },
+    .datetime => .{ .datetime = .{}         },
+    .array    => .{ .array    = Array.empty },
+    .table    => .{ .table    = Table.empty },
   };
 }
 

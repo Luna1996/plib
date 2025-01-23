@@ -89,11 +89,7 @@ const Builder = struct {
   }
 
   fn buildToml(self: Self) *std.Build.Module {
-    const toml_mod = self.buildSubMod(.toml);
-    if (self.b.lazyDependency("zeit", .{})) |zeit| {
-      toml_mod.addImport("zeit", zeit.module("zeit"));
-    }
-    return toml_mod;
+    return self.buildSubMod(.toml);
   }
 
   fn buildSubMod(self: Self, comptime file: Name) *std.Build.Module {
@@ -176,12 +172,13 @@ const Builder = struct {
     test_opt.addOption([]const u8, "name", name);
     test_exe.root_module.addOptions("opts", test_opt);
     
-    const run_step = std.Build.Step.Run.create(self.b, exe_name);
+    var run_step = std.Build.Step.Run.create(self.b, exe_name);
     run_step.addArg("toml-test");
     run_step.addArtifactArg(test_exe);
     if (std.mem.eql(u8, name, "encoder"))
     run_step.addArg("-" ++ name);
     
+    run_step.step.dependOn(&test_exe.step);
     self.b.default_step.dependOn(&run_step.step);
   }
 

@@ -1,13 +1,13 @@
 const std = @import("std");
 
 pub const Toml = union(enum) {
-  string : []const u8,
-  integer: i64,
-  float  : f64,
-  boolean: bool,
-  instant: Instant,
-  array  : Array,
-  table  : Table,
+  string  : []const u8,
+  integer : i64,
+  float   : f64,
+  boolean : bool,
+  datetime: DateTime,
+  array   : Array,
+  table   : Table,
 
   const Self = @This();
   
@@ -16,8 +16,7 @@ pub const Toml = union(enum) {
 
   pub const Tag = @as(type, std.meta.Tag(Self));
 
-  pub const zeit = @import("zeit");
-  pub const Instant = @import("time.zig");
+  pub const DateTime = @import("datetime.zig").DateTime;
   pub const Array = std.ArrayListUnmanaged(Self);
   pub const Table = std.StringHashMapUnmanaged(Self);
   
@@ -31,7 +30,7 @@ test "toml" {
   std.debug.print("\n", .{});
   const allocator = std.testing.allocator;
   const dir = std.fs.cwd();
-  const name = "../../toml-test/" ++ "invalid/local-datetime/month-under" ++ ".toml";
+  const name = "../../toml-test/" ++ "valid/datetime/datetime" ++ ".toml";
   const file_text = try dir.readFileAlloc(allocator, name, std.math.maxInt(usize));
   defer allocator.free(file_text);
   const real_path = try dir.realpathAlloc(allocator, name);

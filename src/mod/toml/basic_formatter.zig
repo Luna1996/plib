@@ -105,12 +105,12 @@ fn printMulKey(path: *std.ArrayListUnmanaged([]const u8), writer: anytype) !void
 
 fn printFlat(self: *const Self, writer: anytype) FormatError(@TypeOf(writer))!void {
   switch (self.*) {
-    .string,  => |string| try writer.print("\"{}\"", .{ esc.escape(string) }),
-    .integer, => |number| try writer.print("{d}", .{number}),
-    .float,   => |number| try writer.print("{d}", .{number}),
-    .boolean, => | value| try writer.print("{}", .{value}),
-    .instant, => | value| try writer.print("{}", .{value}),
-    .array,   => |*array| {
+    .string   => |string| try writer.print("\"{}\"", .{ esc.escape(string) }),
+    .integer  => |number| try writer.print("{d}", .{number}),
+    .float    => |number| try writer.print("{d}", .{number}),
+    .boolean  => | value| try writer.print("{}", .{value}),
+    .datetime => | value| try writer.print("{}", .{value}),
+    .array    => |*array| {
       try writer.writeByte('[');
       const len = array.items.len;
       for (array.items, 1..) |*item, i| {
@@ -119,7 +119,7 @@ fn printFlat(self: *const Self, writer: anytype) FormatError(@TypeOf(writer))!vo
       }
       try writer.writeByte(']');
     },
-    .table,   => |*table| {
+    .table    => |*table| {
       try writer.writeByte('{');
       const len = table.count();
       var i = len;
@@ -135,7 +135,7 @@ fn printFlat(self: *const Self, writer: anytype) FormatError(@TypeOf(writer))!vo
 
 fn isFlat(self: *const Self) bool {
   return switch (self.*) {
-    .string, .integer, .float, .boolean, .instant,
+    .string, .integer, .float, .boolean, .datetime,
       => true,
     .array => |*array| array: {
       for (array.items) |*item|

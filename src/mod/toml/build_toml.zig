@@ -3,19 +3,24 @@ const Self = @import("root.zig").Toml;
 const esc = @import("escape.zig");
 const Tag = Self.Tag;
 const Ast = Self.Ast;
-const Instant = Self.Instant;
+const DateTime = Self.DateTime;
 
-const BuildError = error {TomlError} 
+const BuildError = error {TomlError, DateTimeError} 
   || std.mem.Allocator.Error
   || std.fmt.ParseIntError
   || std.fmt.ParseFloatError
-  || error { Utf8CannotEncodeSurrogateHalf, CodepointTooLarge }
-  || error { InvalidISO8601, UnhandledFormat };
+  || error { Utf8CannotEncodeSurrogateHalf, CodepointTooLarge };
+
+var closed: std.AutoHashMapUnmanaged(*Self, void) = undefined;
 
 pub fn buildToml(allocator: std.mem.Allocator, ast: *const Ast) !Self {
   var root = Self.init(.table);
   errdefer root.deinit(allocator);
 
+  closed = std.AutoHashMapUnmanaged(*Self, void).empty;
+  defer closed.deinit(allocator);
+
+  if (std.meta.activeTag(ast.val) == .str) return root;
 
   var   i     = @as(usize, 0);
   const items = ast.val.sub.items;
@@ -50,9 +55,12 @@ fn buildKeyVal(
   key: *const Ast,
   val: *const Ast,
 ) !void {
-  const item, const found_existing =
-    try resolveMulByAst(self, allocator, key, .integer);
-  if (found_existing) return error.TomlError;
+  var exist = false;
+  const item = try resolveMulByAst(self, allocator, key, &exist, .integer);
+  if (exist) return error.TomlError;
+  const res = try closed.getOrPut(allocator, item);
+  if (res.found_existing) return error.TomlError;
+  res.key_ptr.* = item;
   item.* = try buildVal(allocator, val);
 }
 
@@ -70,13 +78,13 @@ fn buildVal(allocator: std.mem.Allocator, ast: *const Ast) BuildError!Self {
     .offset_date_time,
     .local_date_time,
     .local_date,
-    .local_time        =>     buildInstant (           ast),
+    .local_time        =>     buildDateTime(           ast),
     else               =>     unreachable,
   };
 }
 
 fn buildString(allocator: std.mem.Allocator, ast: *const Ast) !Self {
-  const str, const need_free = try dupeString(allocator, ast);
+  const str, const need_free = try esc.unescape(allocator, ast);
   return .{.string = if (need_free) str else try allocator.dupe(u8, str)};
 }
 
@@ -92,13 +100,14 @@ fn buildBoolean(ast: *const Ast) Self {
   return .{.boolean = std.mem.eql(u8, ast.val.str, "true")};
 }
 
-fn buildInstant(ast: *const Ast) !Self {
-  return .{.instant = try Instant.fromAst(ast)};
+fn buildDateTime(ast: *const Ast) !Self {
+  return .{.datetime = try DateTime.fromRFC3339(ast.val.str)};
 }
 
 fn buildArray(allocator: std.mem.Allocator, ast: *const Ast) !Self {
   var self = Self.init(.array);
   errdefer self.deinit(allocator);
+  if (std.meta.activeTag(ast.val) == .str) return self;
   for (ast.val.sub.items) |*item| {
     var next = try buildVal(allocator, item);
     errdefer next.deinit(allocator);
@@ -110,6 +119,7 @@ fn buildArray(allocator: std.mem.Allocator, ast: *const Ast) !Self {
 fn buildTable(allocator: std.mem.Allocator, ast: *const Ast) !Self {
   var self = Self.init(.table);
   errdefer self.deinit(allocator);
+  if (std.meta.activeTag(ast.val) == .str) return self;
   var i: usize = 0;
   const items = ast.val.sub.items;
   const len = items.len;
@@ -123,9 +133,9 @@ fn resolveTable(
   allocator: std.mem.Allocator,
   ast: *const Ast
 ) !*Self {
-  const next, const found_existing =
-    try resolveMulByAst(self, allocator, ast.get(0), .table);
-  return if (found_existing) error.TomlError else next;
+  var exist = false;
+  const next = try resolveMulByAst(self, allocator, ast.get(0), &exist, .table);
+  return if (exist) error.TomlError else next;
 }
 
 fn resolveArray(
@@ -133,59 +143,53 @@ fn resolveArray(
   allocator: std.mem.Allocator,
   ast: *const Ast
 ) !*Self {
-  const next: *Self, _ = try resolveMulByAst(self, allocator, ast.get(0), .array);
+  var exist = false;
+  const next = try resolveMulByAst(self, allocator, ast.get(0), &exist, .array);
   const item = try next.array.addOne(allocator);
   item.* = Self.init(.table);
   return item;
 }
 
-const ResolveResult: type = std.meta.Tuple(&.{*Self, bool});
-
 fn resolveMulByAst(
   self: *Self,
   allocator: std.mem.Allocator,
   ast: *const Ast,
+  exist: *bool,
   comptime expect: Tag,
-) !ResolveResult {
+) !*Self {
   const keys = ast.val.sub.items;
   const len = keys.len;
   var current_table = self;
   for (keys[0..len - 1]) |*key|
-    current_table, _ = try resolveOneByAst(current_table, allocator, key, .table);
-  return try resolveOneByAst(current_table, allocator, &keys[len - 1], expect);
+    current_table = try resolveOneByAst(current_table, allocator, key, exist, .table);
+  return try resolveOneByAst(current_table, allocator, &keys[len - 1], exist, expect);
 }
 
 fn resolveOneByAst(
   self: *Self,
   allocator: std.mem.Allocator,
   ast: *const Ast,
+  exist: *bool,
   comptime expect: Tag,
-) !ResolveResult {
-  var key, const need_free = try dupeString(allocator, ast);
-  if (self.table.getPtr(key)) |old| {
+) !*Self {
+  if (closed.contains(self)) return error.TomlError;
+  var key, const need_free = try esc.unescape(allocator, ast);
+  if (self.table.getPtr(key)) |val| {
+    exist.* = true;
     if (need_free) allocator.free(key);
-    if (std.meta.activeTag(old.*) != expect) return error.TomlError;
-    return .{old, true};
+    const tag = std.meta.activeTag(val.*);
+    if (tag == expect) return val;
+    if (tag == .array) {
+      const new = &val.array.items[val.array.items.len - 1];
+      if (std.meta.activeTag(new.*) == expect)
+        return new;
+    }
+    return error.TomlError;
   }
+  exist.* = false;
   if (!need_free) key = try allocator.dupe(u8, key);
   errdefer allocator.free(key);
   const res = try self.table.getOrPut(allocator, key);
   res.value_ptr.* = Self.init(expect);
-  return .{ res.value_ptr, res.found_existing };
-}
-
-fn dupeString(
-  allocator: std.mem.Allocator,
-  ast: *const Ast,
-) !std.meta.Tuple(&.{[]const u8, bool}) {
-  const str = ast.val.str;
-  const len = str.len;
-  return switch (ast.tag.?) {
-    .basic_string      => .{ try esc.unescape(allocator, str[1..len - 1]), true  },
-    .ml_basic_string   => .{ try esc.unescape(allocator, str[3..len - 3]), true  },
-    .literal_string    => .{                             str[1..len - 1] , false },
-    .ml_literal_string => .{                             str[3..len - 3] , false },
-    .unquoted_key      => .{                             str             , false },
-    else => unreachable,
-  };
+  return res.value_ptr;
 }
