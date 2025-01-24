@@ -118,7 +118,7 @@ pub const abnf = @import("plib").ABNF {
     .{.alt=&.{.{.str="\n"},.{.str="\r\n"}}},
     .{.str="#"},
     .{.alt=&.{.{.val=.{.min=128,.max=55295}},.{.val=.{.min=57344,.max=1114111}}}},
-    .{.alt=&.{.{.str="\t"},.{.val=.{.min=32,.max=127}},.{.jmp=6}}},
+    .{.alt=&.{.{.str="\t"},.{.val=.{.min=32,.max=126}},.{.jmp=6}}},
     .{.con=&.{.{.jmp=5},.{.rep=.{.sub=&.{.jmp=7}}}}},
     .{.con=&.{.{.jmp=10},.{.jmp=16},.{.jmp=11}}},
     .{.con=&.{.{.jmp=12},.{.rep=.{.sub=&.{.con=&.{.{.jmp=15},.{.jmp=12}}}}}}},

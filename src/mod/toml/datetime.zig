@@ -20,7 +20,10 @@ pub const DateTime = packed struct {
   millisecond: u10 = 0,
   /// ±5999 minutes
   offset: i14 = 0,
-  /// .offset_date_time, .local_date_time, .local_date, .local_time
+  /// .offset_date_time\
+  /// .local_date_time\
+  /// .local_date\
+  /// .local_time
   tag: Tag = .local_time,
 
   const Self = @This();

@@ -1,9 +1,8 @@
 const std = @import("std");
-const Ast = @import("root.zig").Toml.Ast;
 
-pub fn unescape(allocator: std.mem.Allocator, ast: *const Ast) !std.meta.Tuple(&.{[]const u8, bool}) {
-  if (ast.tag.? == .unquoted_key) return .{ast.val.str, false};
-  var help = Unescaper.init(allocator, ast);
+pub fn unescape(allocator: std.mem.Allocator, str: []const u8) !std.meta.Tuple(&.{[]const u8, bool}) {
+  if (str[0] != '"' and str[0] != '\'') return .{str, false};
+  var help = Unescaper.init(allocator, str);
   try help.work();
   return if (help.new) |new| .{new, true} else .{help.old, false};
 }
@@ -19,18 +18,14 @@ const Unescaper = struct {
 
   const Self = @This();
 
-  inline fn init(allocator: std.mem.Allocator, ast: *const Ast) Self {
+  inline fn init(allocator: std.mem.Allocator, str: []const u8) Self {
     var self = Self {.allocator = allocator};
-    self.is_mul, self.is_lit = switch (ast.tag.?) {
-      .basic_string      => .{false, false},
-      .ml_basic_string   => .{true , false},
-      .literal_string    => .{false, true },
-      .ml_literal_string => .{true , true },
-      else => unreachable,
-    };
 
-    const str = ast.val.str;
     const len = str.len;
+
+    self.is_lit = str[0] == '\'';
+    self.is_mul = str.len > 2 and str[0] == str[1];
+
     self.old =
            if (!self.is_mul)   str[1..len-1]
       else if (str[3] == '\n') str[4..len-3]

@@ -5,6 +5,7 @@ const Ast = Self.Ast;
 const Tag = Self.Tag;
 const Array = Self.Array;
 const Table = Self.Table;
+const Builder = @import("builder.zig");
 
 const Conf = struct {
   allocator: std.mem.Allocator,
@@ -18,11 +19,10 @@ pub fn parse(conf: Conf) !Ast {
     .allocator = conf.allocator,
     .input = conf.input,
     .keeps = &.{
-      .toml, .key, .std_table, .array_table,
-      .unquoted_key, .basic_string, .literal_string,
-      .ml_basic_string, .ml_literal_string,
-      .boolean, .array, .inline_table, .float, .integer,
-      .offset_date_time, .local_date_time, .local_date, .local_time,
+      .toml,
+      .keyval, .std_table, .array_table,
+      .key, .unquoted_key, .quoted_key,
+      .string, .boolean, .array, .inline_table, .float, .integer, .date_time,
     },
     .file_path = conf.file_path,
   });
@@ -39,10 +39,10 @@ pub fn parse(conf: Conf) !Ast {
 pub fn build(conf: Conf) !Self {
   var root = try parse(conf);
   defer root.deinit(conf.allocator);
-  return try Self.buildToml(conf.allocator, &root);
+  return try Builder.build(conf.allocator, &root);
 }
 
-pub fn init(comptime tag: Tag) Self {
+pub fn init(tag: Tag) Self {
   return switch (tag) {
     .string   => .{ .string   = ""          },
     .integer  => .{ .integer  = 0           },

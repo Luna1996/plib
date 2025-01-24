@@ -167,7 +167,7 @@ const Builder = struct {
       .root_source_file = self.b.path("src/exe/toml_test.zig"),
     });
     self.addImport(test_exe.root_module, .toml);
-    
+
     const test_opt = self.b.addOptions();
     test_opt.addOption([]const u8, "name", name);
     test_exe.root_module.addOptions("opts", test_opt);
@@ -175,10 +175,11 @@ const Builder = struct {
     var run_step = std.Build.Step.Run.create(self.b, exe_name);
     run_step.addArg("toml-test");
     run_step.addArtifactArg(test_exe);
+    run_step.addArgs(&.{"-timeout", "10s"});
     if (std.mem.eql(u8, name, "encoder"))
     run_step.addArg("-" ++ name);
-    
-    run_step.step.dependOn(&test_exe.step);
+
+    self.b.default_step.dependOn(&self.b.addInstallArtifact(test_exe, .{}).step); 
     self.b.default_step.dependOn(&run_step.step);
   }
 

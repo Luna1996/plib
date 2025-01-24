@@ -21,7 +21,6 @@ pub const Toml = union(enum) {
   pub const Table = std.StringHashMapUnmanaged(Self);
   
   pub usingnamespace @import("core.zig");
-  pub usingnamespace @import("build_toml.zig");
   pub usingnamespace @import("basic_formatter.zig");
   pub usingnamespace @import("json_formatter.zig");
 };
@@ -30,7 +29,7 @@ test "toml" {
   std.debug.print("\n", .{});
   const allocator = std.testing.allocator;
   const dir = std.fs.cwd();
-  const name = "../../toml-test/" ++ "valid/datetime/datetime" ++ ".toml";
+  const name = "../../toml-test/" ++ "invalid/array/extending-table" ++ ".toml";
   const file_text = try dir.readFileAlloc(allocator, name, std.math.maxInt(usize));
   defer allocator.free(file_text);
   const real_path = try dir.realpathAlloc(allocator, name);

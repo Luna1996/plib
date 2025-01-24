@@ -58,6 +58,7 @@ fn printToml(
       for (@as([]Self, array.items)) |*item| {
         try writer.writeAll("[[");
         try printMulKey(path.?, writer);
+        if (path.?.items.len != 0)
         try writer.writeByte('.');
         try printOneKey(entry.key_ptr.*, writer);
         try writer.writeAll("]]\n");
