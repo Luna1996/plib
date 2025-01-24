@@ -16,7 +16,7 @@
 - [`abnf`][4]\
   abnf file parser/serializer, `ABNF` structure generator, generate itself
 - [`toml`][5]\
-  toml file parser/serializer
+  toml file parser/serializer, follow toml v1.0.0, passed all (`toml-test`)[7] tests
 
 ## How To
 
@@ -33,6 +33,18 @@ Use following command to test <mod_name> module.
 zig build -Dstep=test -Dname=mod_name
 ```
 
+### toml-test
+To test the `toml` module against (`toml-test`)[7], first make sure `toml-test` is on your PATH, then
+```
+zig build -Dstep=toml_test
+```
+Currently all decoder tests is passed, encoder tests is a work in progress.
+```
+toml-test v2024-05-31 [C:\code\repo.zig\plib\.zig-cache\o\70a3ad3d347e52dc0e9eff38fd216424\toml_decoder.exe]: using embedded tests
+  valid tests: 182 passed,  0 failed
+invalid tests: 371 passed,  0 failed
+```
+
 ### Add New Parser
 Suppose you want to add a json parser (maybe not since it's included in std lib). You should:
 1. Add `src/raw/json.abnf`, which contains json's abnf definition.
@@ -40,13 +52,6 @@ Suppose you want to add a json parser (maybe not since it's included in std lib)
 3. Modify `zig.build` (and `zig.build.zong` if so desired) to build a `json` module.
 4. Add `src/mod/json/root.zig`, which is the root source file of `json` module. See [`src/mod/toml/root.zig`](src/mod/toml/root.zig) for example.
 5. If you are using vscode, you might also want to modify `.vscode/tasks.json`.
-
-[1]: https://en.wikipedia.org/wiki/Augmented_Backus%E2%80%93Naur_form
-[2]: https://en.wikipedia.org/wiki/Abstract_syntax_tree
-[3]: https://github.com/Luna1996/abnf/tree/main/src/lib
-[4]: https://github.com/Luna1996/abnf/tree/main/src/mod/abnf
-[5]: https://github.com/Luna1996/abnf/tree/main/src/mod/toml
-[6]: https://github.com/Luna1996/abnf/tree/main/src/exe/gen_abnf.zig
 
 ### Use As Dependency
 In your `build.zig.zon` add:
@@ -70,3 +75,11 @@ In your project add:
 const plib = @import("plib");
 const toml = @import("toml");
 ```
+
+[1]: https://en.wikipedia.org/wiki/Augmented_Backus%E2%80%93Naur_form
+[2]: https://en.wikipedia.org/wiki/Abstract_syntax_tree
+[3]: https://github.com/Luna1996/abnf/tree/main/src/lib
+[4]: https://github.com/Luna1996/abnf/tree/main/src/mod/abnf
+[5]: https://github.com/Luna1996/abnf/tree/main/src/mod/toml
+[6]: https://github.com/Luna1996/abnf/tree/main/src/exe/gen_abnf.zig
+[7]: https://github.com/toml-lang/toml-test
