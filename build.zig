@@ -153,8 +153,8 @@ const Builder = struct {
   }
 
   fn buildAllTomlTest(self: Self) void {
-    self.buildOneTomlTest("decoder");
-    // self.buildOneTomlTest("encoder");
+    // self.buildOneTomlTest("decoder");
+    self.buildOneTomlTest("encoder");
   }
 
   fn buildOneTomlTest(self: Self, comptime name: []const u8) void {

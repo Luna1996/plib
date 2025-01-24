@@ -23,6 +23,7 @@ pub const Toml = union(enum) {
   pub usingnamespace @import("core.zig");
   pub usingnamespace @import("basic_formatter.zig");
   pub usingnamespace @import("json_formatter.zig");
+  pub usingnamespace @import("json_converter.zig");
 };
 
 test "toml" {

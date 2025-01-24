@@ -11,9 +11,12 @@ fn decoder(allocator: std.mem.Allocator, toml_text: []const u8, writer: std.fs.F
   try writer.print("{}", .{toml.fmtJson()});
 }
 
-fn encoder(allocator: std.mem.Allocator, json_text: []const u8) !void {
-  _ = allocator;
-  _ = json_text;
+fn encoder(allocator: std.mem.Allocator, json_text: []const u8, writer: std.fs.File.Writer) !void {
+  const res = try std.json.parseFromSlice(std.json.Value, allocator, json_text, .{});
+  defer res.deinit();
+  var toml = try Toml.fromJson(allocator, res.value);
+  defer toml.deinit(allocator);
+  try writer.print("{}", .{toml});
 }
 
 pub fn main() !void {

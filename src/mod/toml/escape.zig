@@ -99,6 +99,7 @@ const Unescaper = struct {
 };
 
 pub fn needEscape(str: []const u8) bool {
+  if (str.len == 0) return true;
   const view = std.unicode.Utf8View.initUnchecked(str);
   var iter = view.iterator();
   while (iter.nextCodepoint()) |code| if (needEscapeCode(code)) {
