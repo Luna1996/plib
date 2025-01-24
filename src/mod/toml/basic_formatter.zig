@@ -34,18 +34,25 @@ fn printToml(
   var not_flat = std.ArrayListUnmanaged(Self.Table.Entry).empty;
   defer not_flat.deinit(allocator);
 
-  var flag = path == null or path.?.items.len == 0;
+  var need_path = path != null and path.?.items.len != 0;
+
+  if (need_path and self.table.count() == 0) {
+    try writer.writeByte('[');
+    try printMulKey(path.?, writer);
+    try writer.writeAll("]\n");
+    return;
+  }
   
   var iter = self.table.iterator();
   while (iter.next()) |entry| if (
     path == null or
     isFlat(entry.value_ptr)
   ) {
-    if (!flag) {
+    if (need_path) {
       try writer.writeByte('[');
       try printMulKey(path.?, writer);
       try writer.writeAll("]\n");
-      flag = true;
+      need_path = false;
     }
     try printKeyVal(entry.value_ptr, entry.key_ptr.*, writer);
     try writer.writeByte('\n');
@@ -108,7 +115,7 @@ fn printFlat(self: *const Self, writer: anytype) FormatError(@TypeOf(writer))!vo
   switch (self.*) {
     .string   => |string| try writer.print("\"{}\"", .{ esc.escape(string) }),
     .integer  => |number| try writer.print("{d}", .{number}),
-    .float    => |number| try writer.print("{d}", .{number}),
+    .float    => |number| try writer.print("{e}", .{number}),
     .boolean  => | value| try writer.print("{}", .{value}),
     .datetime => | value| try writer.print("{}", .{value}),
     .array    => |*array| {
@@ -139,8 +146,9 @@ fn isFlat(self: *const Self) bool {
     .string, .integer, .float, .boolean, .datetime,
       => true,
     .array => |*array| array: {
-      for (array.items) |*item|
-        if (isFlat(item)) break :array true else continue;
+      if (array.items.len == 0) break :array true;
+      for (array.items) |item|
+        if (std.meta.activeTag(item) != .table) break :array true else continue;
       break :array false;
     },
     .table,
@@ -162,7 +170,7 @@ fn advenceTableUntilNotSingleValue(
   const entry = iter.next().?;
   const key = entry.key_ptr.*;
   const val = entry.value_ptr;
-  if (isFlat(val)) return self;
+  if (std.meta.activeTag(val.*) != .table) return self;
   try path.append(allocator, key);
   return try advenceTableUntilNotSingleValue(val, allocator, path);
 }

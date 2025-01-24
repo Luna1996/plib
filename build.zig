@@ -153,7 +153,7 @@ const Builder = struct {
   }
 
   fn buildAllTomlTest(self: Self) void {
-    // self.buildOneTomlTest("decoder");
+    self.buildOneTomlTest("decoder");
     self.buildOneTomlTest("encoder");
   }
 
@@ -171,15 +171,16 @@ const Builder = struct {
     const test_opt = self.b.addOptions();
     test_opt.addOption([]const u8, "name", name);
     test_exe.root_module.addOptions("opts", test_opt);
+
+    const test_ins = self.b.addInstallArtifact(test_exe, .{});
     
     var run_step = std.Build.Step.Run.create(self.b, exe_name);
     run_step.addArg("toml-test");
-    run_step.addArtifactArg(test_exe);
-    run_step.addArgs(&.{"-timeout", "10s"});
+    run_step.addArg(self.b.getInstallPath(test_ins.dest_dir.?, test_ins.dest_sub_path));
     if (std.mem.eql(u8, name, "encoder"))
     run_step.addArg("-" ++ name);
 
-    self.b.default_step.dependOn(&self.b.addInstallArtifact(test_exe, .{}).step); 
+    run_step.step.dependOn(&test_ins.step); 
     self.b.default_step.dependOn(&run_step.step);
   }
 

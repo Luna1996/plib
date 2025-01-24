@@ -134,6 +134,7 @@ pub const DateTime = packed struct {
 
   fn printSecFrac(frac: usize, max: usize, writer: anytype) !void {
     if (frac == 0) return;
+    try writer.writeByte('.');
     var n = max;
     var z: usize = 0;
     while (n != 1){

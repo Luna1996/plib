@@ -30,7 +30,7 @@ test "toml" {
   std.debug.print("\n", .{});
   const allocator = std.testing.allocator;
   const dir = std.fs.cwd();
-  const name = "../../toml-test/" ++ "invalid/array/extending-table" ++ ".toml";
+  const name = "../../toml-test/" ++ "valid/inline-table/array-values" ++ ".toml";
   const file_text = try dir.readFileAlloc(allocator, name, std.math.maxInt(usize));
   defer allocator.free(file_text);
   const real_path = try dir.realpathAlloc(allocator, name);

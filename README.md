@@ -38,9 +38,11 @@ To test the `toml` module against (`toml-test`)[7], first make sure `toml-test` 
 ```
 zig build -Dstep=toml_test
 ```
-Currently all decoder tests is passed, encoder tests is a work in progress.
+Currently all tests is passed.
 ```
-toml-test v2024-05-31 [C:\code\repo.zig\plib\.zig-cache\o\70a3ad3d347e52dc0e9eff38fd216424\toml_decoder.exe]: using embedded tests
+toml-test v2024-05-31 [C:\repo\repo.zig\plib\zig-out\bin\toml_encoder.exe]: using embedded tests
+encoder tests: 182 passed,  0 failed
+toml-test v2024-05-31 [C:\repo\repo.zig\plib\zig-out\bin\toml_decoder.exe]: using embedded tests
   valid tests: 182 passed,  0 failed
 invalid tests: 371 passed,  0 failed
 ```

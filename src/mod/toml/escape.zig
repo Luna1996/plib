@@ -133,7 +133,7 @@ fn escapeString(
     const c = std.unicode.utf8Decode(s) catch unreachable;
     if (needEscapeCode(c)) {
       switch (c) {
-        ' ', '!', '#'...'&', '('...'~' => {
+        ' ', '!', '#'...'[', ']'...'~' => {
           try writer.writeByte(@intCast(c));
           continue;
         },
