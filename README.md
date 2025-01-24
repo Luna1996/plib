@@ -16,7 +16,7 @@
 - [`abnf`][4]\
   abnf file parser/serializer, `ABNF` structure generator, generate itself
 - [`toml`][5]\
-  toml file parser/serializer, follow toml v1.0.0, passed all (`toml-test`)[7] tests
+  toml file parser/serializer, follow toml v1.0.0, passed all [`toml-test`][7] tests
 
 ## How To
 
