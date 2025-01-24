@@ -34,7 +34,7 @@ zig build -Dstep=test -Dname=mod_name
 ```
 
 ### toml-test
-To test the `toml` module against (`toml-test`)[7], first make sure `toml-test` is on your PATH, then
+To test the `toml` module against [`toml-test`][7], first make sure `toml-test` is on your PATH, then
 ```
 zig build -Dstep=toml_test
 ```
