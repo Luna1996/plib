@@ -1,6 +1,7 @@
 const std = @import("std");
 const ABNF = @import("abnf.zig").ABNF;
 const Rule = @import("abnf.zig").Rule;
+const fmtFail = @import("fail.zig").fmtFail;
 
 pub fn Parser(comptime abnf: ABNF) type {
   return struct {
@@ -31,8 +32,7 @@ pub fn Parser(comptime abnf: ABNF) type {
     
     pub const Ast = @import("ast.zig").Ast(Tag);
 
-    const AllocError = std.mem.Allocator.Error;
-    const ParseError = error { ParseError } || AllocError;
+    const Error = error { ParseError } || std.mem.Allocator.Error;
 
     const Fail = struct {
       pos: usize,
@@ -47,31 +47,7 @@ pub fn Parser(comptime abnf: ABNF) type {
         _: std.fmt.FormatOptions,
         writer: anytype,
       ) !void {
-        try writer.print("[{d}] ", .{self.pos});
         switch (self.wht) {
-          .val => |val| try writer.print("{d}-{d}", .{val.min, val.max}),
-          .str => |str| try writer.print("\"{}\"", .{std.zig.fmtEscapes(str)}),
-        }
-      }
-    };
-
-    const FailWithContext = struct {
-      path: ?[]const u8,
-      text: []const u8,
-      fail: Fail,
-
-      pub fn format(
-        self: @This(), 
-        comptime _: []const u8,
-        _: std.fmt.FormatOptions,
-        writer: anytype,
-      ) !void {
-        const loc = std.zig.findLineColumn(self.text, self.fail.pos);
-        try writer.print("{s}:{d}:{d}: expect ", .{
-          if (self.path) |path| path else "????",
-          loc.line + 1, loc.column + 1,
-        });
-        switch (self.fail.wht) {
           .val => |val| {
             var out: [4]u8 = undefined;
             try writer.print("\'{}\'", .{std.zig.fmtEscapes(out[0..try std.unicode.utf8Encode(val.min, &out)])});
@@ -79,15 +55,7 @@ pub fn Parser(comptime abnf: ABNF) type {
           },
           .str => |str| try writer.print("\"{}\"", .{std.zig.fmtEscapes(str)}),
         }
-        try writer.print(" at\n{s}\n", .{loc.source_line});
-        try writer.writeByteNTimes(' ', loc.column);
-        try writer.writeAll("^\n");
       }
-    };
-
-    const Result = struct {
-      root: Ast,
-      fail: ?FailWithContext,
     };
 
     const rules = abnf.rules;
@@ -99,7 +67,8 @@ pub fn Parser(comptime abnf: ABNF) type {
       file_path: ?[]const u8 = null,
       root_rule: Tag = @enumFromInt(0),
       keep_null: bool = false,
-    }) AllocError!Result {
+      log_error: bool = true,
+    }) Error!Ast {
       var root = Ast.initSub(conf.root_rule);
       errdefer root.deinit(conf.allocator);
       var self = Self {
@@ -109,22 +78,21 @@ pub fn Parser(comptime abnf: ABNF) type {
         .cur_ast = &root,
         .keep_null = conf.keep_null,
       };
-      for (conf.keeps) |tag| self.keeps.setPresent(tag, true);
-      self.parseRule(rules[@intFromEnum(conf.root_rule)]) catch |e|
-        if (e != error.ParseError) return AllocError.OutOfMemory;
-      try self.appendStr(conf.allocator, true);
-      if (self.init_pos == self.input.len) self.last_fail = null;
-      return .{
-        .root = root,
-        .fail = if (self.last_fail) |fail| .{
-          .path = conf.file_path,
+      errdefer |e| if (e == error.ParseError and conf.log_error) if (self.last_fail) |fail| {
+        std.debug.print("{}", .{fmtFail(fail, .{
+          .file = conf.file_path,
           .text = conf.input,
-          .fail = fail,    
-        } else null,
+          .pos = fail.pos,
+        })});
       };
+      for (conf.keeps) |tag| self.keeps.setPresent(tag, true);
+      try self.parseRule(rules[@intFromEnum(conf.root_rule)]);
+      try self.appendStr(conf.allocator, true);
+      if (self.init_pos != self.input.len) return error.ParseError;
+      return root;
     }
 
-    fn parseRule(self: *Self, rule: Rule) ParseError!void {
+    fn parseRule(self: *Self, rule: Rule) Error!void {
       const old_ast = self.cur_ast;
       const old_len = self.cur_ast.val.sub.items.len;
       const old_init_pos = self.init_pos;
@@ -145,16 +113,16 @@ pub fn Parser(comptime abnf: ABNF) type {
       }
     }
 
-    fn parseRuleAlt(self: *Self, alt: Rule.Alt) ParseError!void {
+    fn parseRuleAlt(self: *Self, alt: Rule.Alt) Error!void {
       for (alt) |rule| if (self.parseRule(rule)) return else |_| continue;
       return error.ParseError;
     }
 
-    fn parseRuleCon(self: *Self, con: Rule.Con) ParseError!void {
+    fn parseRuleCon(self: *Self, con: Rule.Con) Error!void {
       for (con) |rule| try self.parseRule(rule);
     }
 
-    fn parseRuleRep(self: *Self, rep: Rule.Rep) ParseError!void {
+    fn parseRuleRep(self: *Self, rep: Rule.Rep) Error!void {
       var cnt: usize = 0;
       while (rep.max == 0 or cnt < rep.max) {
         self.parseRule(rep.sub.*) catch break;
@@ -163,14 +131,14 @@ pub fn Parser(comptime abnf: ABNF) type {
       if (cnt < rep.min) return error.ParseError;
     }
 
-    fn parseRuleStr(self: *Self, str: Rule.Str) ParseError!void {
+    fn parseRuleStr(self: *Self, str: Rule.Str) Error!void {
       if (self.init_pos >= self.input.len or !std.mem.startsWith(u8, self.input[self.init_pos..], str)) {
         try self.postError(.{.pos = self.init_pos, .wht = .{.str = str}});
       }
       self.init_pos += str.len;
     }
 
-    fn parseRuleVal(self: *Self, val: Rule.Val) ParseError!void {
+    fn parseRuleVal(self: *Self, val: Rule.Val) Error!void {
       if (fail: {
         if (self.init_pos >= self.input.len) break :fail true;
         const len = std.unicode.utf8ByteSequenceLength(self.input[self.init_pos]) catch break :fail true;
@@ -183,7 +151,7 @@ pub fn Parser(comptime abnf: ABNF) type {
       }
     }
 
-    fn parseRuleJmp(self: *Self, jmp: Rule.Jmp) ParseError!void {
+    fn parseRuleJmp(self: *Self, jmp: Rule.Jmp) Error!void {
       if (self.keeps.contains(@enumFromInt(jmp))) {
         try self.appendStr(self.allocator, false);
         const old_ast = self.cur_ast;

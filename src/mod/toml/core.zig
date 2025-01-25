@@ -12,10 +12,11 @@ const Conf = struct {
   file_path: ?[]const u8 = null,
   input: []const u8,
   edit_inplace: bool = false,
+  log_error: bool = true,
 };
 
 pub fn parse(conf: Conf) !Ast {
-  var result = try Parser.parse(.{
+  return try Parser.parse(.{
     .allocator = conf.allocator,
     .input = conf.input,
     .keeps = &.{
@@ -25,21 +26,17 @@ pub fn parse(conf: Conf) !Ast {
       .string, .boolean, .array, .inline_table, .float, .integer, .date_time,
     },
     .file_path = conf.file_path,
+    .log_error = conf.log_error,
   });
-  errdefer result.root.deinit(conf.allocator);
-
-  if (result.fail) |fail| {
-    std.debug.print("{}", .{fail});
-    return error.ParseError;
-  } else {
-    return result.root;
-  }
 }
 
 pub fn build(conf: Conf) !Self {
   var root = try parse(conf);
   defer root.deinit(conf.allocator);
-  return try Builder.build(conf.allocator, &root);
+  return try Builder.build(conf.allocator, &root, .{
+    .file = conf.file_path,
+    .text = conf.input,
+  });
 }
 
 pub fn init(tag: Tag) Self {

@@ -22,20 +22,26 @@ const BuildError = error {TomlError, DateTimeError}
 /// 3 - closed
 const ExplicitMap = std.AutoHashMapUnmanaged(*Toml, u2);
 
+const ErrorInfo = struct {
+  file: ?[]const u8,
+  text: []const u8,
+};
 
 allocator: std.mem.Allocator,
 root: *Toml,
 current_table: *Toml,
 
-is_array: bool = false,
 explicit: ExplicitMap = ExplicitMap.empty,
 
-pub fn build(allocator: std.mem.Allocator, ast: *const Ast) !Toml {
+error_info: ?ErrorInfo,
+
+pub fn build(allocator: std.mem.Allocator, ast: *const Ast, error_info: ?ErrorInfo) !Toml {
   var root = Toml.init(.table);
   var self = Self {
     .allocator = allocator,
     .root = &root,
     .current_table = &root,
+    .error_info = error_info,
   };
   defer self.deinit();
   errdefer self.root.deinit(allocator);
@@ -55,7 +61,6 @@ fn deinit(self: *Self) void {
 }
 
 fn changeCurrentTable(self: *Self, ast: *const Ast) !void {
-  self.is_array = ast.tag == .array_table;
   self.current_table = try self.resolveMul(self.root, ast);
 }
 
@@ -69,6 +74,14 @@ fn resolveMul(self: *Self, root: *Toml, ast: *const Ast) !*Toml {
 }
 
 fn resolveOne(self: *Self, root: *Toml, key_esc: []const u8, ast_tag: AstTag, is_last: bool) !*Toml {
+  errdefer |e| if (e == error.TomlError) if (self.error_info) |info| {
+    std.debug.print("{}", .{@import("plib").fmtFail("toml structure error", .{
+      .file = info.file,
+      .text = info.text,
+      .span = key_esc,
+    })});
+  };
+
   var want_tag: Tag = tag: {
     if (!is_last) break :tag .table;
     break :tag switch (ast_tag) {

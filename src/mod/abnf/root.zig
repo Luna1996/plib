@@ -37,7 +37,7 @@ pub const ABNF = struct {
   }
 
   pub fn parse(conf: Conf) !Ast {
-    var result = try Parser.parse(.{
+    return try Parser.parse(.{
       .allocator = conf.allocator,
       .input = conf.input,
       .keeps = &.{
@@ -47,14 +47,6 @@ pub const ABNF = struct {
       },
       .file_path = conf.file_path,
     });
-    errdefer result.root.deinit(conf.allocator);
-
-    if (result.fail) |fail| {
-      std.debug.print("{}", .{fail});
-      return error.ParseError;
-    } else {
-      return result.root;
-    }
   }
 
   pub fn deinit(self: *Self) void {
