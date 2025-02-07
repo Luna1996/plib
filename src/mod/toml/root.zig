@@ -21,21 +21,21 @@ pub const Toml = union(enum) {
   pub const Table = std.StringHashMapUnmanaged(Self);
   
   pub usingnamespace @import("core.zig");
-  pub usingnamespace @import("basic_formatter.zig");
-  pub usingnamespace @import("json_formatter.zig");
-  pub usingnamespace @import("json_converter.zig");
+  pub usingnamespace @import("formatter_flat.zig");
+  pub usingnamespace @import("formatter_json.zig");
+  pub usingnamespace @import("json_to_toml.zig");
 };
 
 test "toml" {
   std.debug.print("\n", .{});
   const allocator = std.testing.allocator;
   const dir = std.fs.cwd();
-  const name = "../../toml-test/" ++ "invalid/table/append-to-array-with-dotted-keys" ++ ".toml";
+  const name = "../../toml-test/" ++ "valid/spec-example-1" ++ ".toml";
   const file_text = try dir.readFileAlloc(allocator, name, std.math.maxInt(usize));
   defer allocator.free(file_text);
   const real_path = try dir.realpathAlloc(allocator, name);
   defer allocator.free(real_path);
-  var toml = try Toml.build(.{
+  var toml = try Toml.parse(Toml, .{
     .allocator = allocator,
     .file_path = real_path,
     .input = file_text,

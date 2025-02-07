@@ -3,7 +3,7 @@ const name = @import("opts").name;
 const Toml = @import("toml").Toml;
 
 fn decoder(allocator: std.mem.Allocator, toml_text: []const u8, writer: std.fs.File.Writer) !void {
-  var toml = try Toml.build(.{
+  var toml = try Toml.parse(Toml, .{
     .allocator = allocator,
     .input = toml_text,
   });

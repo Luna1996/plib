@@ -5,9 +5,10 @@ const Ast = Self.Ast;
 const Tag = Self.Tag;
 const Array = Self.Array;
 const Table = Self.Table;
-const Builder = @import("builder.zig");
+const ast_to_toml = @import("ast_to_toml.zig");
+const toml_to_type = @import("toml_to_type.zig");
 
-const Conf = struct {
+pub const Conf = struct {
   allocator: std.mem.Allocator,
   file_path: ?[]const u8 = null,
   input: []const u8,
@@ -15,8 +16,15 @@ const Conf = struct {
   log_error: bool = true,
 };
 
-pub fn parse(conf: Conf) !Ast {
-  return try Parser.parse(.{
+pub fn Parsed(comptime T: type) type {
+  return switch (T) {
+    Ast, Self => T,
+    else => toml_to_type.Result(T),
+  };
+}
+
+pub fn parse(comptime T: type, conf: Conf) !Parsed(T) {
+  var ast = try Parser.parse(.{
     .allocator = conf.allocator,
     .input = conf.input,
     .keeps = &.{
@@ -28,15 +36,15 @@ pub fn parse(conf: Conf) !Ast {
     .file_path = conf.file_path,
     .log_error = conf.log_error,
   });
-}
-
-pub fn build(conf: Conf) !Self {
-  var root = try parse(conf);
-  defer root.deinit(conf.allocator);
-  return try Builder.build(conf.allocator, &root, .{
+  if (T == Ast) return ast;
+  defer ast.deinit(conf.allocator);
+  var toml = try ast_to_toml.build(conf.allocator, &ast, .{
     .file = conf.file_path,
     .text = conf.input,
   });
+  if (T == Self) return toml;
+  defer toml.deinit(conf.allocator);
+  return try toml_to_type.build(conf, T, toml);
 }
 
 pub fn init(tag: Tag) Self {
@@ -73,4 +81,25 @@ fn deinitTable(table: *Table, allocator: std.mem.Allocator) void {
     entry.value_ptr.deinit(allocator);
   }
   table.deinit(allocator);
+}
+
+pub fn clone(self: Self, allocator: std.mem.Allocator) std.mem.Allocator.Error!Self {
+  return switch (self) {
+    .string => |string| .{.string = try allocator.dupe(u8, string)},
+    .array  => |*array| array: {
+      var new_array = try Array.initCapacity(allocator, array.items.len);
+      for (array.items) |item|
+        new_array.appendAssumeCapacity(try item.clone(allocator));
+      break :array new_array;
+    },
+    .table  => |*table| table: {
+      var new_table = Table.empty;
+      try new_table.ensureTotalCapacity(allocator, table.size);
+      var iter = table.iterator();
+      while (iter.next()) |entry|
+        new_table.putAssumeCapacity(entry.key_ptr.*, try entry.value_ptr.clone(allocator));
+      break :table new_table;
+    },
+    else => self,
+  };
 }
