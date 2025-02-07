@@ -10,10 +10,14 @@ const toml_to_type = @import("toml_to_type.zig");
 
 pub const Conf = struct {
   allocator: std.mem.Allocator,
+  
   file_path: ?[]const u8 = null,
   input: []const u8,
-  edit_inplace: bool = false,
+  
   log_error: bool = true,
+
+  error_unknown_key: bool = true,
+  union_inference: bool = true,
 };
 
 pub fn Parsed(comptime T: type) type {
