@@ -6,7 +6,7 @@ const Tag = Self.Tag;
 const Array = Self.Array;
 const Table = Self.Table;
 const ast_to_toml = @import("ast_to_toml.zig");
-const toml_to_type = @import("toml_to_type.zig");
+const toml_to_any = @import("toml_to_any.zig");
 
 pub const Conf = struct {
   allocator: std.mem.Allocator,
@@ -20,14 +20,7 @@ pub const Conf = struct {
   union_inference: bool = true,
 };
 
-pub fn Parsed(comptime T: type) type {
-  return switch (T) {
-    Ast, Self => T,
-    else => toml_to_type.Result(T),
-  };
-}
-
-pub fn parse(comptime T: type, conf: Conf) !Parsed(T) {
+pub fn parse(comptime T: type, conf: Conf) !T {
   var ast = try Parser.parse(.{
     .allocator = conf.allocator,
     .input = conf.input,
@@ -48,7 +41,7 @@ pub fn parse(comptime T: type, conf: Conf) !Parsed(T) {
   });
   if (T == Self) return toml;
   defer toml.deinit(conf.allocator);
-  return try toml_to_type.build(conf, T, toml);
+  return try toml_to_any.build(conf, T, toml);
 }
 
 pub fn init(tag: Tag) Self {
