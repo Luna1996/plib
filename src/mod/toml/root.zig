@@ -20,7 +20,7 @@ pub const Toml = union(enum) {
 
   pub const DateTime = @import("datetime.zig").DateTime;
   pub const Array = std.ArrayListUnmanaged(Self);
-  pub const Table = std.StringHashMapUnmanaged(Self);
+  pub const Table = std.StringArrayHashMapUnmanaged(Self);
 
   pub usingnamespace @import("core.zig");
   pub usingnamespace @import("formatter_flat.zig");

@@ -124,7 +124,7 @@ fn buildStruct(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {
     } else return error.TomlError;
     vali += 1;
   }
-  if (used < toml.table.size) return error.TomlError;
+  if (used < toml.table.count()) return error.TomlError;
   return item;
 }
 
@@ -147,7 +147,7 @@ fn buildTable(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {
   if (asTag(toml) != .table) return error.TomlError;
   var table = Table.empty;
   errdefer deinitAny(table, conf.allocator);
-  try table.ensureTotalCapacity(conf.allocator, toml.table.size);
+  try table.ensureTotalCapacity(conf.allocator, @intCast(toml.table.count()));
   var iter = toml.table.iterator();
   while (iter.next()) |entry|
     table.putAssumeCapacity(

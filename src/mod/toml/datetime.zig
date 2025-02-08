@@ -3,7 +3,7 @@ const Toml = @import("root.zig").Toml;
 const Tag = Toml.Parser.Tag;
 const Ast = Toml.Ast;
 
-pub const DateTime = packed struct {
+pub const DateTime = struct {
   /// 0000-9999
   year: u14 = 1970,
   /// 01-12
