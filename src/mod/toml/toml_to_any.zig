@@ -1,7 +1,10 @@
 const std = @import("std");
 const asTag = std.meta.activeTag;
 
-const deinit = @import("plib").deinit;
+const deinit_any = @import("plib").deinit_any;
+const isArray = deinit_any.isArray;
+const isTable = deinit_any.isTable;
+pub const deinitAny = deinit_any.deinitAny;
 
 const Toml = @import("root.zig").Toml;
 const DateTime = @import("datetime.zig").DateTime;
@@ -96,7 +99,7 @@ fn buildVector(conf: Conf, comptime T: type, toml: Toml) Error!T {
   if (toml.array.items.len != len) return error.TomlError;
   var vali: usize = 0;
   var list: T = undefined;
-  errdefer for (0..vali) |i| deinit(list[i], conf.allocator);
+  errdefer for (0..vali) |i| deinitAny(list[i], conf.allocator);
   for (toml.array.items, 0..) |item, i| {
     list[i] = try build(conf, V, item);
     vali += 1;
@@ -116,7 +119,7 @@ fn buildStruct(conf: Conf, comptime T: type, toml: Toml) Error!T {
   var vali: usize = 0;
   errdefer inline for (fields, 0..) |field, i| {
     if (i >= vali) break;
-    deinit(@field(item, field.name), conf.allocator);
+    deinitAny(@field(item, field.name), conf.allocator);
   };
   inline for (fields) |field| {
     if (toml.table.get(field.name)) |sub_toml| {
@@ -133,38 +136,13 @@ fn buildStruct(conf: Conf, comptime T: type, toml: Toml) Error!T {
   return item;
 }
 
-fn isArray(comptime T: type) bool {
-  if (!@hasDecl(T, "Slice")) return false;
-  return switch (@typeInfo(T.Slice)) {
-    .pointer => |info|
-      T == std.ArrayListAligned(info.child, info.alignment) or
-      T == std.ArrayListAlignedUnmanaged(info.child, info.alignment),
-    else => false,
-  };
-}
-
-fn isTable(comptime T: type) bool {
-  if (!@hasDecl(T, "KV")) return false;
-  switch (@typeInfo(T.KV)) {
-    .@"struct" => {
-      if (!@hasField(T.KV, "value")) return false;
-      const V = std.meta.FieldType(T.KV, .value);
-      if (T == std.StringHashMap(V) or
-          T == std.StringHashMapUnmanaged(V) or
-          T == std.StringArrayHashMap(V) or
-          T == std.StringArrayHashMapUnmanaged(V)) return true;
-    },
-    else => return false,
-  }
-}
-
 fn buildArray(conf: Conf, comptime T: type, toml: Toml) Error!T {
   const info = @typeInfo(T.Slice).pointer;
   const V = info.child;
   const A = std.ArrayListAlignedUnmanaged(V, info.alignment);
   if (asTag(toml) != .array) return error.TomlError;
   var list = try A.initCapacity(conf.allocator, toml.array.items.len);
-  errdefer deinit(list, conf.allocator);
+  errdefer deinitAny(list, conf.allocator);
   for (toml.array.items) |item|
     list.appendAssumeCapacity(try build(conf, V, item));
   return if (T == A) list else list.toManaged(conf.allocator);
@@ -176,7 +154,7 @@ fn buildTable(conf: Conf, comptime T: type, toml: Toml) Error!T {
   const Value = std.meta.FieldType(Table.KV, .value);
   if (asTag(toml) != .table) return error.TomlError;
   var table = Table.empty;
-  errdefer deinit(table, conf.allocator);
+  errdefer deinitAny(table, conf.allocator);
   try table.ensureTotalCapacity(conf.allocator, toml.table.size);
   var iter = toml.table.iterator();
   while (iter.next()) |entry|

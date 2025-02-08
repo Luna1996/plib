@@ -27,7 +27,6 @@ pub const Toml = union(enum) {
 };
 
 test "toml" {
-  std.debug.print("\n", .{});
   const allocator = std.testing.allocator;
   const file_text =
     \\#Useless spaces eliminated.
@@ -58,8 +57,7 @@ test "toml" {
     const IP = struct {
       ip: [4]u8,
 
-      pub fn fromToml(_: Toml.Conf, toml: Toml) @import("toml_to_any.zig").Error!IP {
-        std.debug.print("yeah!{f}\n", .{toml});
+      pub fn fromToml(_: Toml.Conf, _: Toml) @import("toml_to_any.zig").Error!IP {
         return .{.ip = .{1, 2, 3, 4}};
       }
     };
@@ -90,13 +88,5 @@ test "toml" {
     .allocator = allocator,
     .input = file_text,
   });
-  defer @import("plib").deinit(spec, allocator);
-  var iter = spec.servers.iterator();
-  while (iter.next()) |entry| {
-    @import("plib").deinit(entry.key_ptr.*, allocator);
-    @import("plib").deinit(entry.value_ptr.*, allocator);
-  }
-  for (spec.clients.data.items) |item|
-    @import("plib").deinit(item, allocator);
-  std.debug.print("{}", .{spec});
+  defer Toml.deinitAny(spec, allocator);
 }

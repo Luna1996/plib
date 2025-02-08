@@ -80,6 +80,8 @@ fn deinitTable(table: *Table, allocator: std.mem.Allocator) void {
   table.deinit(allocator);
 }
 
+pub const deinitAny = toml_to_any.deinitAny;
+
 pub fn clone(self: Self, allocator: std.mem.Allocator) std.mem.Allocator.Error!Self {
   return switch (self) {
     .string => |string| .{.string = try allocator.dupe(u8, string)},
