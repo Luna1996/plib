@@ -10,6 +10,8 @@ pub const Toml = union(enum) {
   table   : Table,
 
   const Self = @This();
+
+  pub const Error = error { TomlError } || std.mem.Allocator.Error;
   
   pub const Parser = @import("plib").Parser(@import("gen").abnf);
   pub const Ast = Parser.Ast;
@@ -19,7 +21,7 @@ pub const Toml = union(enum) {
   pub const DateTime = @import("datetime.zig").DateTime;
   pub const Array = std.ArrayListUnmanaged(Self);
   pub const Table = std.StringHashMapUnmanaged(Self);
-  
+
   pub usingnamespace @import("core.zig");
   pub usingnamespace @import("formatter_flat.zig");
   pub usingnamespace @import("formatter_json.zig");
@@ -54,13 +56,7 @@ test "toml" {
     \\]
   ;
   const spec = try Toml.parse(struct {
-    const IP = struct {
-      ip: [4]u8,
-
-      pub fn fromToml(_: Toml.Conf, _: Toml) @import("toml_to_any.zig").Error!IP {
-        return .{.ip = .{1, 2, 3, 4}};
-      }
-    };
+    const IP = []const u8;
     const Client = union(enum) {
       str: [2][]const u8,
       int: @Vector(2, u32),
@@ -89,4 +85,6 @@ test "toml" {
     .input = file_text,
   });
   defer Toml.deinitAny(spec, allocator);
+  var toml = try Toml.fromAny(spec, allocator);
+  defer toml.deinit(allocator);
 }

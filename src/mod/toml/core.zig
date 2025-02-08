@@ -44,6 +44,8 @@ pub fn parse(comptime T: type, conf: Conf) !T {
   return try toml_to_any.build(conf, T, toml);
 }
 
+pub const fromAny = @import("any_to_toml.zig").build;
+
 pub fn init(tag: Tag) Self {
   return switch (tag) {
     .string   => .{ .string   = ""          },

@@ -1,23 +1,15 @@
 const std = @import("std");
 const asTag = std.meta.activeTag;
-
 const deinit_any = @import("plib").deinit_any;
 const isArray = deinit_any.isArray;
 const isTable = deinit_any.isTable;
-pub const deinitAny = deinit_any.deinitAny;
-
+const Conf = Toml.Conf;
 const Toml = @import("root.zig").Toml;
 const DateTime = @import("datetime.zig").DateTime;
 
-const Conf = Toml.Conf;
+pub const deinitAny = deinit_any.deinitAny;
 
-pub const Error = error { TomlError } || std.mem.Allocator.Error;
-
-pub fn BuildFn(comptime T: type) type {
-  return fn (Conf, Toml) Error!T;
-}
-
-pub fn build(conf: Conf, comptime T: type, toml: Toml) Error!T {
+pub fn build(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {
   return switch (@typeInfo(T)) {
     .bool      => try buildBool  (         toml),
     .int       => try buildInt   (      T, toml),
@@ -37,37 +29,37 @@ pub fn build(conf: Conf, comptime T: type, toml: Toml) Error!T {
   };
 }
 
-inline fn buildBool(toml: Toml) Error!bool {
+inline fn buildBool(toml: Toml) Toml.Error!bool {
   if (asTag(toml) != .boolean) return error.TomlError;
   return toml.boolean;
 }
 
-inline fn buildDateTime(toml: Toml) Error!DateTime {
+inline fn buildDateTime(toml: Toml) Toml.Error!DateTime {
   if (asTag(toml) != .datetime) return error.TomlError;
   return toml.datetime;
 }
 
-inline fn buildInt(comptime T: type, toml: Toml) Error!T {
+inline fn buildInt(comptime T: type, toml: Toml) Toml.Error!T {
   if (asTag(toml) != .integer) return error.TomlError;
   return @as(T, @intCast(toml.integer));
 }
 
-inline fn buildFloat(comptime T: type, toml: Toml) Error!T {
+inline fn buildFloat(comptime T: type, toml: Toml) Toml.Error!T {
   if (asTag(toml) != .float) return error.TomlError;
   return @as(T, @floatCast(toml.float));
 }
 
-inline fn buildEnum(conf: Conf, comptime T: type, toml: Toml) Error!T {
-  if (getCustomBuildFn(T)) |build_fn| try build_fn(conf, toml);
+inline fn buildEnum(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {
+  if (comptime getCustomBuildFn(T)) |build_fn| try build_fn(conf, toml);
   if (asTag(toml) != .string) return error.TomlError;
   return std.meta.stringToEnum(T, toml.string) orelse error.TomlError;
 }
 
-inline fn buildOpt(conf: Conf, comptime T: type, toml: Toml) Error!T {
+inline fn buildOpt(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {
   return try build(conf, @typeInfo(T).optional.child, toml);
 }
 
-inline fn buildPtr(conf: Conf, comptime T: type, toml: Toml) Error!T {
+inline fn buildPtr(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {
   const V = @typeInfo(T).pointer.child;
   const v = try conf.allocator.create(V);
   errdefer conf.allocator.destroy(v);
@@ -75,7 +67,7 @@ inline fn buildPtr(conf: Conf, comptime T: type, toml: Toml) Error!T {
   return v;
 }
 
-fn buildSlice(conf: Conf, comptime T: type, toml: Toml) Error!T {
+fn buildSlice(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {
   const info = @typeInfo(T).pointer;
   const V = info.child;
   const A = std.ArrayListAlignedUnmanaged(V, info.alignment);
@@ -89,7 +81,7 @@ fn buildSlice(conf: Conf, comptime T: type, toml: Toml) Error!T {
   }
 }
 
-fn buildVector(conf: Conf, comptime T: type, toml: Toml) Error!T {
+fn buildVector(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {
   const V, const len = switch (@typeInfo(T)) {
     .array  => |val| .{val.child, val.len},
     .vector => |val| .{val.child, val.len},
@@ -107,9 +99,9 @@ fn buildVector(conf: Conf, comptime T: type, toml: Toml) Error!T {
   return list;
 }
 
-fn buildStruct(conf: Conf, comptime T: type, toml: Toml) Error!T {
+fn buildStruct(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {
   if (T == DateTime) return try buildDateTime(toml);
-  if (getCustomBuildFn(T)) |build_fn| return try build_fn(conf, toml);
+  if (comptime getCustomBuildFn(T)) |build_fn| return try build_fn(conf, toml);
   if (comptime isArray(T)) return try buildArray(conf, T, toml);
   if (comptime isTable(T)) return try buildTable(conf, T, toml);
   if (asTag(toml) != .table) return error.TomlError;
@@ -136,7 +128,7 @@ fn buildStruct(conf: Conf, comptime T: type, toml: Toml) Error!T {
   return item;
 }
 
-fn buildArray(conf: Conf, comptime T: type, toml: Toml) Error!T {
+fn buildArray(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {
   const info = @typeInfo(T.Slice).pointer;
   const V = info.child;
   const A = std.ArrayListAlignedUnmanaged(V, info.alignment);
@@ -148,7 +140,7 @@ fn buildArray(conf: Conf, comptime T: type, toml: Toml) Error!T {
   return if (T == A) list else list.toManaged(conf.allocator);
 }
 
-fn buildTable(conf: Conf, comptime T: type, toml: Toml) Error!T {
+fn buildTable(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {
   const is_managed = @hasField(T, "unmanaged");
   const Table = if (is_managed) T.Unmanaged else T;
   const Value = std.meta.FieldType(Table.KV, .value);
@@ -164,13 +156,17 @@ fn buildTable(conf: Conf, comptime T: type, toml: Toml) Error!T {
   return if (is_managed) table.promote(conf.allocator) else table;
 }
 
-fn buildUnion(conf: Conf, comptime T: type, toml: Toml) Error!T {
+fn buildUnion(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {
   if (T == Toml) return toml.clone(conf.allocator);
-  if (getCustomBuildFn(T)) |build_fn| return try build_fn(conf, toml);
+  if (comptime getCustomBuildFn(T)) |build_fn| return try build_fn(conf, toml);
   inline for (@typeInfo(T).@"union".fields) |field| loop: {
     return @unionInit(T, field.name, build(conf, field.type, toml) catch break :loop);
   }
   return error.TomlError;
+}
+
+fn BuildFn(comptime T: type) type {
+  return fn (Conf, Toml) Toml.Error!T;
 }
 
 fn getCustomBuildFn(comptime T: type) ?BuildFn(T) {
