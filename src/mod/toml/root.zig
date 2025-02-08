@@ -20,7 +20,7 @@ pub const Toml = union(enum) {
 
   pub const DateTime = @import("datetime.zig").DateTime;
   pub const Array = std.ArrayListUnmanaged(Self);
-  pub const Table = std.StringArrayHashMapUnmanaged(Self);
+  pub const Table = std.StringHashMapUnmanaged(Self);
 
   pub usingnamespace @import("core.zig");
   pub usingnamespace @import("formatter_flat.zig");
@@ -87,4 +87,8 @@ test "toml" {
   defer Toml.deinitAny(spec, allocator);
   var toml = try Toml.fromAny(spec, allocator);
   defer toml.deinit(allocator);
+}
+
+test "toml.size" {
+  std.debug.assert(@sizeOf(Toml) == 32);
 }
