@@ -2,16 +2,13 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Build & Run Test",
-      "type": "cppvsdbg",
+      "type": "gdb",
       "request": "launch",
-      "program": "${workspaceRoot}/zig-out/bin/test.exe",
+      "name": "Test",
+      "target": "${workspaceRoot}/zig-out/bin/test",
       "cwd": "${workspaceRoot}",
-      "logging": {
-        "moduleLoad": false,
-      },
+      "valuesFormatting": "prettyPrinters",
       "preLaunchTask": "test",
-      "console": "internalConsole",
       "internalConsoleOptions": "openOnSessionStart",
     },
   ]
