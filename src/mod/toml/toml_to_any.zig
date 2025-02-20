@@ -41,12 +41,12 @@ inline fn buildDateTime(toml: Toml) Toml.Error!DateTime {
 
 inline fn buildInt(comptime T: type, toml: Toml) Toml.Error!T {
   if (asTag(toml) != .integer) return error.TomlError;
-  return @as(T, @intCast(toml.integer));
+  return @intCast(toml.integer);
 }
 
 inline fn buildFloat(comptime T: type, toml: Toml) Toml.Error!T {
   if (asTag(toml) != .float) return error.TomlError;
-  return @as(T, @floatCast(toml.float));
+  return @floatCast(toml.float);
 }
 
 inline fn buildEnum(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {

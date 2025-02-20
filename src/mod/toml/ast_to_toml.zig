@@ -48,7 +48,8 @@ pub fn build(allocator: std.mem.Allocator, ast: *const Ast, error_info: ?ErrorIn
 
   if (asTag(ast.val) == .str) return root;
 
-  for (ast.val.sub.items) |*sub_ast| switch (sub_ast.tag.?) {
+  var iter = ast.iterator();
+  while (iter.next()) |sub_ast| switch (sub_ast.tag.?) {
     .keyval => try self.buildKeyVal(self.current_table, sub_ast),
     else    => try self.changeCurrentTable(sub_ast),
   };
@@ -61,15 +62,19 @@ fn deinit(self: *Self) void {
 }
 
 fn changeCurrentTable(self: *Self, ast: *const Ast) !void {
-  self.current_table = try self.resolveMul(self.root, ast);
+  var iter = ast.iterator();
+  self.current_table = try self.resolveMul(self.root, iter.next().?, ast.tag.?);
 }
 
-fn resolveMul(self: *Self, root: *Toml, ast: *const Ast) !*Toml {
-  const keys = ast.get(0).val.sub.items;
-  const ast_tag = ast.tag.?;
+fn resolveMul(self: *Self, root: *Toml, ast: *const Ast, ast_tag: AstTag) !*Toml {
+  var iter = ast.iterator();
   var current_table = root;
-  for (keys, 1..) |*key, i|
-    current_table = try self.resolveOne(current_table, key.val.str, ast_tag, i == keys.len);
+  var cur_ast = iter.next();
+  while (cur_ast) |key| {
+    const nxt_ast = iter.next();
+    current_table = try self.resolveOne(current_table, key.val.str, ast_tag, nxt_ast == null);
+    cur_ast = nxt_ast;
+  }
   return current_table;
 }
 
@@ -140,8 +145,10 @@ fn resolveOne(self: *Self, root: *Toml, key_esc: []const u8, ast_tag: AstTag, is
 }
 
 fn buildKeyVal(self: *Self, root: *Toml, ast: *const Ast) !void {
-  const val = ast.get(1);
-  const item = try self.resolveMul(root, ast);
+  var iter = ast.iterator();
+  const key = iter.next().?;
+  const val = iter.next().?;
+  const item = try self.resolveMul(root, key, ast.tag.?);
   item.* = try self.buildVal(val);
 }
 
@@ -183,7 +190,8 @@ fn buildArray(self: *Self, ast: *const Ast) !Toml {
   var item = Toml.init(.array);
   errdefer item.deinit(self.allocator);
   if (std.meta.activeTag(ast.val) == .str) return item;
-  for (ast.val.sub.items) |*sub_ast| {
+  var iter = ast.iterator();
+  while (iter.next()) |sub_ast| {
     var next = try self.buildVal(sub_ast);
     errdefer next.deinit(self.allocator);
     try item.array.append(self.allocator, next);
@@ -195,7 +203,8 @@ fn buildTable(self: *Self, ast: *const Ast) !Toml {
   var item = Toml.init(.table);
   errdefer item.deinit(self.allocator);
   if (std.meta.activeTag(ast.val) == .str) return item;
-  for (ast.val.sub.items) |*sub_ast|
+  var iter = ast.iterator();
+  while (iter.next()) |sub_ast|
     try self.buildKeyVal(&item, sub_ast);
   return item;
 }

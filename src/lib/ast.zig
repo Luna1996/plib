@@ -34,16 +34,6 @@ pub fn Ast(comptime Tag: type) type {
       }
     }
 
-    pub fn deinitOwned(self: Self, allocator: std.mem.Allocator) void {
-      switch (self.val) {
-        .str => |str| allocator.free(str),
-        .sub => |sub| {
-          for (sub.items) |item| item.deinitOwned(allocator);
-          sub.deinit();
-        },
-      }
-    }
-
     pub fn reset(self: *Self, allocator: std.mem.Allocator, old_len: usize) void {
       switch (self.val) {
         .str => unreachable,
@@ -78,6 +68,23 @@ pub fn Ast(comptime Tag: type) type {
     pub fn appendSub(self: *Self, allocator: std.mem.Allocator, item: *Self) !void {
       try self.val.sub.appendSlice(allocator, item.val.sub.items);
       item.val.sub.clearAndFree(allocator);
+    }
+
+    pub fn iterator(self: Self) struct {
+      list: []Self,
+      i: usize = 0,
+
+      pub fn next(iter: *@This()) ?*Self {
+        for (iter.list[iter.i..]) |*item| {
+          iter.i += 1;
+          if (item.tag != null) return item;
+        }
+        return null;
+      }
+    } {
+      return .{
+        .list = self.val.sub.items
+      };
     }
 
     pub fn format(

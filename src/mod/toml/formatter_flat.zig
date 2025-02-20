@@ -62,7 +62,7 @@ fn printToml(
 
   for (not_flat.items) |*entry| switch (entry.value_ptr.*) {
     .array => |*array| {
-      for (@as([]Self, array.items)) |*item| {
+      for (array.items) |*item| {
         try writer.writeAll("[[");
         try printMulKey(path.?, writer);
         if (path.?.items.len != 0)

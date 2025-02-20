@@ -15,8 +15,9 @@ pub const Toml = union(enum) {
   
   pub const Parser = @import("plib").Parser(@import("gen").abnf);
   pub const Ast = Parser.Ast;
+  pub const AstTag = Parser.Tag;
 
-  pub const Tag = @as(type, std.meta.Tag(Self));
+  pub const Tag= std.meta.Tag(Self);
 
   pub const DateTime = @import("datetime.zig").DateTime;
   pub const Array = std.ArrayListUnmanaged(Self);
