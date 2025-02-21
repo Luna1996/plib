@@ -29,63 +29,90 @@ pub const Toml = union(enum) {
   pub usingnamespace @import("json_to_toml.zig");
 };
 
-test "toml" {
+// test {
+//   const allocator = std.testing.allocator;
+//   const file_text =
+//     \\#Useless spaces eliminated.
+//     \\title="TOML Example"
+//     \\[owner]
+//     \\name="Lance Uppercut"
+//     \\dob=1979-05-27T07:32:00-08:00#First class dates
+//     \\[database]
+//     \\server="192.168.1.1"
+//     \\ports=[8001,8001,8002]
+//     \\connection_max=5000
+//     \\enabled=true
+//     \\[servers]
+//     \\[servers.alpha]
+//     \\ip="10.0.0.1"
+//     \\dc="eqdc10"
+//     \\[servers.beta]
+//     \\ip="10.0.0.2"
+//     \\dc="eqdc10"
+//     \\[clients]
+//     \\data=[["gamma","delta"],[1,2]]
+//     \\hosts=[
+//     \\"alpha",
+//     \\"omega"
+//     \\]
+//   ;
+//   const spec = try Toml.parse(struct {
+//     const IP = []const u8;
+//     const Client = union(enum) {
+//       str: [2][]const u8,
+//       int: @Vector(2, u32),
+//     };
+//     title: []const u8,
+//     owner: struct {
+//       name: []const u8,
+//       dob: Toml.DateTime,
+//     },
+//     database: struct {
+//       server: IP,
+//       ports: []const u32,
+//       connection_max: u32,
+//       enabled: bool,
+//     },
+//     servers: std.StringHashMapUnmanaged(struct {
+//       ip: IP,
+//       dc: []const u8,
+//     }),
+//     clients: struct {
+//       data: std.ArrayList(Client),
+//       hosts: Client,
+//     },
+//   }, .{
+//     .allocator = allocator,
+//     .input = file_text,
+//   });
+//   defer Toml.deinitAny(spec, allocator);
+//   var toml = try Toml.fromAny(spec, allocator);
+//   defer toml.deinit(allocator);
+// }
+
+test {
+  std.debug.print("\n", .{});
   const allocator = std.testing.allocator;
   const file_text =
-    \\#Useless spaces eliminated.
-    \\title="TOML Example"
-    \\[owner]
-    \\name="Lance Uppercut"
-    \\dob=1979-05-27T07:32:00-08:00#First class dates
-    \\[database]
-    \\server="192.168.1.1"
-    \\ports=[8001,8001,8002]
-    \\connection_max=5000
-    \\enabled=true
-    \\[servers]
-    \\[servers.alpha]
-    \\ip="10.0.0.1"
-    \\dc="eqdc10"
-    \\[servers.beta]
-    \\ip="10.0.0.2"
-    \\dc="eqdc10"
-    \\[clients]
-    \\data=[["gamma","delta"],[1,2]]
-    \\hosts=[
-    \\"alpha",
-    \\"omega"
+    \\integers = [ 1, 2, 3 ]
+    \\colors = [ "red", "yellow", "green" ]
+    \\nested_arrays_of_ints = [ [ 1, 2 ], [3, 4, 5] ]
+    \\nested_mixed_array = [ [ 1, 2 ], ["a", "b", "c"] ]
+    \\string_array = [ "all", 'strings', """are the same""", '''type''' ]
+    \\
+    \\# Mixed-type arrays are allowed
+    \\numbers = [ 0.1, 0.2, 0.5, 1, 2, 5 ]
+    \\contributors = [
+    \\  "Foo Bar <foo@example.com>",
+    \\  { name = "Baz Qux", email = "bazqux@example.com", url = "https://example.com/bazqux" }
     \\]
+    \\
   ;
-  const spec = try Toml.parse(struct {
-    const IP = []const u8;
-    const Client = union(enum) {
-      str: [2][]const u8,
-      int: @Vector(2, u32),
-    };
-    title: []const u8,
-    owner: struct {
-      name: []const u8,
-      dob: Toml.DateTime,
-    },
-    database: struct {
-      server: IP,
-      ports: []const u32,
-      connection_max: u32,
-      enabled: bool,
-    },
-    servers: std.StringHashMapUnmanaged(struct {
-      ip: IP,
-      dc: []const u8,
-    }),
-    clients: struct {
-      data: std.ArrayList(Client),
-      hosts: Client,
-    },
-  }, .{
+  var toml = try Toml.parse(Toml, .{
     .allocator = allocator,
     .input = file_text,
   });
-  defer Toml.deinitAny(spec, allocator);
-  var toml = try Toml.fromAny(spec, allocator);
   defer toml.deinit(allocator);
+
+  std.debug.print("\n{}\n", .{toml});
 }

@@ -43,13 +43,19 @@ pub fn build(allocator: std.mem.Allocator, ast: *const Ast, error_info: ?ErrorIn
   defer self.deinit();
   errdefer self.root.deinit(allocator);
 
+  errdefer std.debug.print("{}\n", .{root});
+
   if (asTag(ast.val) == .str) return root;
 
   var iter = ast.iterator();
-  while (iter.next()) |sub_ast| switch (sub_ast.tag.?) {
-    .keyval => try self.buildKeyVal(self.current_table, sub_ast),
-    else    => try self.changeCurrentTable(sub_ast),
-  };
+  while (iter.next()) |exp_ast| {
+    if (asTag(exp_ast.val) == .str) continue;
+    var exp_iter = exp_ast.iterator();
+    if (exp_iter.next()) |sub_ast| switch (sub_ast.tag.?) {
+      .keyval => try self.buildKeyVal(self.current_table, sub_ast),
+      else    => try self.changeCurrentTable(sub_ast),
+    };
+  }
 
   return root;
 }
@@ -95,10 +101,10 @@ fn resolveOne(self: *Self, root: *Toml, key_esc: []const u8, ast_tag: AstTag, is
   };
 
   var key, var need_free = try esc.unescape(self.allocator, key_esc);
-  errdefer if (need_free) self.allocator.free(key);
   
   var tag: Tag = undefined;
   var new = new: {
+    errdefer if (need_free) self.allocator.free(key);
     const res = try root.table.getOrPut(self.allocator, key);
     if (res.found_existing) {
       if (need_free) {
@@ -135,8 +141,11 @@ fn resolveOne(self: *Self, root: *Toml, key_esc: []const u8, ast_tag: AstTag, is
 
   try self.canExtend(new, ast_tag, is_last);
 
-  if (calcExplicitLvl(ast_tag, is_last)) |lvl|
+  if (calcExplicitLvl(ast_tag, is_last)) |lvl| {
     try self.explicit.put(self.allocator, new, lvl);
+    std.debug.print("0x{x:0>8}\n", .{@intFromPtr(new)});
+    std.debug.print("{f}\n", .{new});
+  }
 
   return if (tag == want_tag) new else error.TomlError;
 }
@@ -207,7 +216,7 @@ fn buildTable(self: *Self, ast: *const Ast) !Toml {
 }
 
 fn calcExplicitLvl(ast_tag: AstTag, is_last: bool) ?ExplicitLvl {
-  return if (is_last) (if (ast_tag == .keyval) .closed else .explicit)
+  return if (is_last) (if (ast_tag == .keyval) null else .explicit)
          else         (if (ast_tag == .keyval) .implicit else null);
 }
 
@@ -216,5 +225,19 @@ fn canExtend(self: *Self, toml: *Toml, ast_tag: AstTag, is_last: bool) !void {
     .closed => true,
     .explicit => is_last or ast_tag == .keyval,
     .implicit => is_last and ast_tag != .keyval,
-  }) return error.TomlError;
+  }) {
+    std.debug.print("fuck\n", .{});
+    std.debug.print("0x{x:0>8}\n", .{@intFromPtr(toml)});
+    std.debug.print("{f}\n", .{toml});
+
+    std.debug.print("explicit:\n", .{});
+
+    var iter = self.explicit.keyIterator();
+    while (iter.next()) |item| {
+      const temp = item.*;
+      std.debug.print("0x{x:0>8}\n", .{@intFromPtr(temp)});
+      std.debug.print("{f}\n", .{temp});
+    }
+    return error.TomlError;
+  }
 }

@@ -7,14 +7,22 @@ const Ast = Toml.Ast;
 
 allocator: std.mem.Allocator,
 
-ast: ?Ast = null,
-val: ?Toml = null,
+ast: Ast = Ast.initStr(""),
+val: Toml = Toml.init(.table),
 
 pub fn deinit(self: *Self) void {
-  if (self.ast) |*ast| ast.deinit(self.allocator);
-  if (self.val) |*val| val.deinit(self.allocator);
+  self.ast.deinit(self.allocator);
+  self.val.deinit(self.allocator);
 }
 
 pub fn setVal(self: *Self, val: anytype) !void {
   self.val = try Toml.fromAny(val, self.allocator);
 }
+
+// pub fn format(
+//   self: *Self, 
+//   comptime _: []const u8,
+//   _: std.fmt.FormatOptions,
+//   writer: anytype,
+// ) !void {
+// }

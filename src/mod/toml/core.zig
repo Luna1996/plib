@@ -30,7 +30,7 @@ pub fn parse(comptime T: type, conf: Conf) !T {
     .input = conf.input,
     .keep_null = keep_null,
     .keeps = &.{
-      .toml,
+      .toml, .expression,
       .keyval, .std_table, .array_table,
       .key, .unquoted_key, .quoted_key,
       .string, .boolean, .array, .inline_table, .float, .integer, .date_time,
@@ -56,7 +56,7 @@ pub fn init(tag: Tag) Self {
   return switch (tag) {
     .string   => .{ .string   = ""          },
     .integer  => .{ .integer  = 0           },
-    .float    => .{ .float    = 0           },
+    .float    => .{ .float    = std.crypto.random.float(f64)           },
     .boolean  => .{ .boolean  = false       },
     .datetime => .{ .datetime = .{}         },
     .array    => .{ .array    = Array.empty },
