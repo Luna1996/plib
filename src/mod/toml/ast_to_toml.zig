@@ -16,11 +16,8 @@ const BuildError = error {TomlError, DateTimeError}
   || std.fmt.ParseFloatError
   || error { Utf8CannotEncodeSurrogateHalf, CodepointTooLarge };
 
-/// 0 - open\
-/// 1 - implicit\
-/// 2 - explicit\
-/// 3 - closed
-const ExplicitMap = std.AutoHashMapUnmanaged(*Toml, u2);
+const ExplicitLvl = enum(u2) {implicit, explicit, closed};
+const ExplicitMap = std.AutoHashMapUnmanaged(*Toml, ExplicitLvl);
 
 const ErrorInfo = struct {
   file: ?[]const u8,
@@ -209,16 +206,15 @@ fn buildTable(self: *Self, ast: *const Ast) !Toml {
   return item;
 }
 
-fn calcExplicitLvl(ast_tag: AstTag, is_last: bool) ?u2 {
-  return if (is_last) (if (ast_tag == .keyval) 3 else 2)
-         else         (if (ast_tag == .keyval) 1 else null);
+fn calcExplicitLvl(ast_tag: AstTag, is_last: bool) ?ExplicitLvl {
+  return if (is_last) (if (ast_tag == .keyval) .closed else .explicit)
+         else         (if (ast_tag == .keyval) .implicit else null);
 }
 
 fn canExtend(self: *Self, toml: *Toml, ast_tag: AstTag, is_last: bool) !void {
   if (switch (self.explicit.get(toml) orelse return) {
-    3 => true,
-    2 => is_last or ast_tag == .keyval,
-    1 => is_last and ast_tag != .keyval,
-    0 => unreachable,
+    .closed => true,
+    .explicit => is_last or ast_tag == .keyval,
+    .implicit => is_last and ast_tag != .keyval,
   }) return error.TomlError;
 }

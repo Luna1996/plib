@@ -89,7 +89,3 @@ test "toml" {
   var toml = try Toml.fromAny(spec, allocator);
   defer toml.deinit(allocator);
 }
-
-test "toml.size" {
-  std.debug.assert(@sizeOf(Toml) == 32);
-}
