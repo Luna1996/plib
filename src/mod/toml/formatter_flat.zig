@@ -7,13 +7,13 @@ fn FormatError(comptime Writer: type) type {
 }
 
 pub fn format(
-  self: Self,
+  self: *const Self,
   comptime fmt: []const u8,
   _: std.fmt.FormatOptions,
   writer: anytype,
 ) !void {
   if (std.mem.eql(u8, fmt, "f")) {
-    try printFlat(&self, writer);
+    try printFlat(self, writer);
   } else {
     var gpa = std.heap.GeneralPurposeAllocator(.{}).init;
     defer _ = gpa.deinit();
@@ -21,7 +21,7 @@ pub fn format(
     const allocator = gpa.allocator();
     var path = std.ArrayListUnmanaged([]const u8).empty;
     defer path.deinit(allocator);
-    try printToml(&self, allocator, &path, writer);
+    try printToml(self, allocator, &path, writer);
   }
 }
 

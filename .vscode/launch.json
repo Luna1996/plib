@@ -2,14 +2,17 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "type": "gdb",
+      "type": "cppvsdbg",
       "request": "launch",
       "name": "Test",
-      "target": "${workspaceRoot}/zig-out/bin/test",
+      "program": "${workspaceRoot}/zig-out/bin/test",
       "cwd": "${workspaceRoot}",
-      "valuesFormatting": "prettyPrinters",
       "preLaunchTask": "test",
+      "console": "internalConsole",
       "internalConsoleOptions": "openOnSessionStart",
+      "logging": {
+        "moduleLoad": false,
+      }
     },
   ]
 }

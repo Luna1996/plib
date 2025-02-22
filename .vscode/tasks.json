@@ -54,7 +54,7 @@
         "abnf",
         "toml",
       ],
-      "default": "abnf",
+      "default": "toml",
     }
   ]
 }

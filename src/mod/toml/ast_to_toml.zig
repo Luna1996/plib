@@ -8,6 +8,9 @@ const Ast = Toml.Ast;
 const AstTag = Toml.Parser.Tag;
 const DateTime = Toml.DateTime;
 
+const Path = Toml.Path;
+const PathContext = Toml.PathContext;
+
 const asTag = std.meta.activeTag;
 
 const BuildError = error {TomlError, DateTimeError} 
@@ -17,7 +20,7 @@ const BuildError = error {TomlError, DateTimeError}
   || error { Utf8CannotEncodeSurrogateHalf, CodepointTooLarge };
 
 const ExplicitLvl = enum(u2) {implicit, explicit, closed};
-const ExplicitMap = std.AutoHashMapUnmanaged(*Toml, ExplicitLvl);
+const ExplicitMap = std.HashMapUnmanaged(Path, ExplicitLvl, PathContext, std.hash_map.default_max_load_percentage);
 
 const ErrorInfo = struct {
   file: ?[]const u8,
@@ -26,6 +29,8 @@ const ErrorInfo = struct {
 
 allocator: std.mem.Allocator,
 root: *Toml,
+
+current_path: Path = Path.empty,
 current_table: *Toml,
 
 explicit: ExplicitMap = ExplicitMap.empty,
@@ -41,9 +46,7 @@ pub fn build(allocator: std.mem.Allocator, ast: *const Ast, error_info: ?ErrorIn
     .error_info = error_info,
   };
   defer self.deinit();
-  errdefer self.root.deinit(allocator);
-
-  errdefer std.debug.print("{}\n", .{root});
+  errdefer root.deinit(allocator);
 
   if (asTag(ast.val) == .str) return root;
 
@@ -61,11 +64,15 @@ pub fn build(allocator: std.mem.Allocator, ast: *const Ast, error_info: ?ErrorIn
 }
 
 fn deinit(self: *Self) void {
+  var keys = self.explicit.keyIterator();
+  while (keys.next()) |key| key.deinit(self.allocator);
   self.explicit.deinit(self.allocator);
+  self.current_path.deinit(self.allocator);
 }
 
 fn changeCurrentTable(self: *Self, ast: *const Ast) !void {
   var iter = ast.iterator();
+  self.current_path.items.len = 0;
   self.current_table = try self.resolveMul(self.root, iter.next().?, ast.tag.?);
 }
 
@@ -101,50 +108,58 @@ fn resolveOne(self: *Self, root: *Toml, key_esc: []const u8, ast_tag: AstTag, is
   };
 
   var key, var need_free = try esc.unescape(self.allocator, key_esc);
+  defer if (need_free) self.allocator.free(key);
   
   var tag: Tag = undefined;
   var new = new: {
-    errdefer if (need_free) self.allocator.free(key);
     const res = try root.table.getOrPut(self.allocator, key);
     if (res.found_existing) {
       if (need_free) {
         self.allocator.free(key);
-        need_free = false;
+        key = res.key_ptr.*;
       }
       tag = asTag(res.value_ptr.*);
     } else {
       if (!need_free){
         key = try self.allocator.dupe(u8, key);
-        need_free = true;
         res.key_ptr.* = key;
       }
       res.value_ptr.* = Toml.init(want_tag);
       tag = want_tag;
     }
+    need_free = false;
     break :new res.value_ptr;
   };
 
+  try self.current_path.append(self.allocator, .{.str = key});
 
-  if (!is_last and want_tag == .table and tag == .array) {
-    try self.canExtend(new, ast_tag, false);
-    new = &new.array.items[new.array.items.len - 1];
+  if (tag == .array and !is_last and want_tag == .table) {
+    try self.canExtend(ast_tag, false);
+    const num = new.array.items.len - 1;
+    new = &new.array.items[num];
     tag = asTag(new.*);
+    try self.current_path.append(self.allocator, .{.num = num});
   }
 
-  if (is_last and want_tag == .array and tag == .array) {
+  if (tag == .array and is_last and want_tag == .array) {
+    const num = new.array.items.len;
     want_tag = .table;
-    try self.canExtend(new, ast_tag, true);
+    try self.canExtend(ast_tag, true);
     new = try new.array.addOne(self.allocator);
     new.* = Toml.init(want_tag);
     tag = want_tag;
+    try self.current_path.append(self.allocator, .{.num = num});
   }
 
-  try self.canExtend(new, ast_tag, is_last);
+  try self.canExtend(ast_tag, is_last);
 
   if (calcExplicitLvl(ast_tag, is_last)) |lvl| {
-    try self.explicit.put(self.allocator, new, lvl);
-    std.debug.print("0x{x:0>8}\n", .{@intFromPtr(new)});
-    std.debug.print("{f}\n", .{new});
+    const res = try self.explicit.getOrPut(self.allocator, self.current_path);
+    if (!res.found_existing) {
+      errdefer _ = self.explicit.remove(self.current_path);
+      res.key_ptr.* = try self.current_path.clone(self.allocator);
+    }
+    res.value_ptr.* = lvl;
   }
 
   return if (tag == want_tag) new else error.TomlError;
@@ -154,90 +169,78 @@ fn buildKeyVal(self: *Self, root: *Toml, ast: *const Ast) !void {
   var iter = ast.iterator();
   const key = iter.next().?;
   const val = iter.next().?;
+  const path_len = self.current_path.items.len;
   const item = try self.resolveMul(root, key, ast.tag.?);
-  item.* = try self.buildVal(val);
+  try self.buildVal(item, val);
+  self.current_path.items.len = path_len;
 }
 
-fn buildVal(self: *Self, ast: *const Ast) BuildError!Toml {
-  return switch (ast.tag.?) {
-    .string       => try self.buildString  (ast.val.str),
-    .integer      => try      buildInteger (ast.val.str),
-    .float        => try      buildFloat   (ast.val.str),
-    .boolean      =>          buildBoolean (ast.val.str),
-    .date_time    =>          buildDateTime(ast.val.str),
-    .array        => try self.buildArray   (ast),
-    .inline_table => try self.buildTable   (ast),
+fn buildVal(self: *Self, root: *Toml, ast: *const Ast) BuildError!void {
+  switch (ast.tag.?) {
+    .string       => try self.buildString  (root, ast.val.str),
+    .integer      => try      buildInteger (root, ast.val.str),
+    .float        => try      buildFloat   (root, ast.val.str),
+    .boolean      =>          buildBoolean (root, ast.val.str),
+    .date_time    => try      buildDateTime(root, ast.val.str),
+    .array        => try self.buildArray   (root, ast),
+    .inline_table => try self.buildTable   (root, ast),
     else          =>     unreachable,
-  };
-}
-
-fn buildString(self: *Self, raw: []const u8) !Toml {
-  const str, const need_free = try esc.unescape(self.allocator, raw);
-  return .{.string = if (need_free) str else try self.allocator.dupe(u8, str)};
-}
-
-fn buildInteger(str: []const u8) !Toml {
-  return .{.integer = try std.fmt.parseInt(i64, str, 0)};
-}
-
-fn buildFloat(str: []const u8) !Toml {
-  return .{.float = try std.fmt.parseFloat(f64, str)};
-}
-
-fn buildBoolean(str: []const u8) Toml {
-  return .{.boolean = std.mem.eql(u8, str, "true")};
-}
-
-fn buildDateTime(str: []const u8) !Toml {
-  return .{.datetime = try DateTime.fromRFC3339(str)};
-}
-
-fn buildArray(self: *Self, ast: *const Ast) !Toml {
-  var item = Toml.init(.array);
-  errdefer item.deinit(self.allocator);
-  if (std.meta.activeTag(ast.val) == .str) return item;
-  var iter = ast.iterator();
-  while (iter.next()) |sub_ast| {
-    var next = try self.buildVal(sub_ast);
-    errdefer next.deinit(self.allocator);
-    try item.array.append(self.allocator, next);
   }
-  return item;
 }
 
-fn buildTable(self: *Self, ast: *const Ast) !Toml {
-  var item = Toml.init(.table);
-  errdefer item.deinit(self.allocator);
-  if (std.meta.activeTag(ast.val) == .str) return item;
+fn buildString(self: *Self, root: *Toml, raw: []const u8) !void {
+  const str, const need_free = try esc.unescape(self.allocator, raw);
+  root.* = .{.string = if (need_free) str else try self.allocator.dupe(u8, str)};
+}
+
+fn buildInteger(root: *Toml, str: []const u8) !void {
+  root.* = .{.integer = try std.fmt.parseInt(i64, str, 0)};
+}
+
+fn buildFloat(root: *Toml, str: []const u8) !void {
+  root.* = .{.float = try std.fmt.parseFloat(f64, str)};
+}
+
+fn buildBoolean(root: *Toml, str: []const u8) void {
+  root.* = .{.boolean = std.mem.eql(u8, str, "true")};
+}
+
+fn buildDateTime(root: *Toml, str: []const u8) !void {
+  root.* = .{.datetime = try DateTime.fromRFC3339(str)};
+}
+
+fn buildArray(self: *Self, root: *Toml, ast: *const Ast) !void {
+  root.* = Toml.init(.array);
+  if (std.meta.activeTag(ast.val) == .str) return;
+  var iter = ast.iterator();
+  const path_len = self.current_path.items.len;
+  try self.current_path.append(self.allocator, .{.num = 0});
+  while (iter.next()) |sub_ast| {
+    const item = try root.array.addOne(self.allocator);
+    item.* = Toml.init(.integer);
+    try self.buildVal(item, sub_ast);
+    self.current_path.items[path_len].num += 1;
+  }
+  self.current_path.items.len = path_len;
+}
+
+fn buildTable(self: *Self, root: *Toml, ast: *const Ast) !void {
+  root.* = Toml.init(.table);
+  if (std.meta.activeTag(ast.val) == .str) return;
   var iter = ast.iterator();
   while (iter.next()) |sub_ast|
-    try self.buildKeyVal(&item, sub_ast);
-  return item;
+    try self.buildKeyVal(root, sub_ast);
 }
 
 fn calcExplicitLvl(ast_tag: AstTag, is_last: bool) ?ExplicitLvl {
-  return if (is_last) (if (ast_tag == .keyval) null else .explicit)
+  return if (is_last) (if (ast_tag == .keyval) .closed else .explicit)
          else         (if (ast_tag == .keyval) .implicit else null);
 }
 
-fn canExtend(self: *Self, toml: *Toml, ast_tag: AstTag, is_last: bool) !void {
-  if (switch (self.explicit.get(toml) orelse return) {
+fn canExtend(self: *Self, ast_tag: AstTag, is_last: bool) !void {
+  if (switch (self.explicit.get(self.current_path) orelse return) {
     .closed => true,
     .explicit => is_last or ast_tag == .keyval,
     .implicit => is_last and ast_tag != .keyval,
-  }) {
-    std.debug.print("fuck\n", .{});
-    std.debug.print("0x{x:0>8}\n", .{@intFromPtr(toml)});
-    std.debug.print("{f}\n", .{toml});
-
-    std.debug.print("explicit:\n", .{});
-
-    var iter = self.explicit.keyIterator();
-    while (iter.next()) |item| {
-      const temp = item.*;
-      std.debug.print("0x{x:0>8}\n", .{@intFromPtr(temp)});
-      std.debug.print("{f}\n", .{temp});
-    }
-    return error.TomlError;
-  }
+  }) return error.TomlError;
 }

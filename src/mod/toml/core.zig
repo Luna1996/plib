@@ -56,7 +56,7 @@ pub fn init(tag: Tag) Self {
   return switch (tag) {
     .string   => .{ .string   = ""          },
     .integer  => .{ .integer  = 0           },
-    .float    => .{ .float    = std.crypto.random.float(f64)           },
+    .float    => .{ .float    = 0           },
     .boolean  => .{ .boolean  = false       },
     .datetime => .{ .datetime = .{}         },
     .array    => .{ .array    = Array.empty },
@@ -109,4 +109,50 @@ pub fn clone(self: Self, allocator: std.mem.Allocator) std.mem.Allocator.Error!S
     },
     else => self,
   };
+}
+
+pub const PathContext = struct {
+  pub fn hash(_: @This(), s: Self.Path) u64 {
+    var wy = std.hash.Wyhash.init(0);
+    for (s.items) |name| switch (name) {
+      .str => |str| wy.update(str),
+      .num => |num| wy.update(std.mem.asBytes(&num)),
+    };
+    return wy.final();
+  }
+
+  pub fn eql(_: @This(), a: Self.Path, b: Self.Path) bool {
+    if (a.items.len != b.items.len) return false;
+    if (a.items.ptr == b.items.ptr) return true;
+    for (a.items, b.items) |ia, ib| switch (ia) {
+      .str => |sa| switch (ib) {
+        .str => |sb| if (!std.mem.eql(u8, sa, sb)) return false,
+        .num => return false,
+      },
+      .num => |na| switch (ib) {
+        .str => return false,
+        .num => |nb| if (na != nb) return false,
+      },
+    };
+    return true;
+  }
+};
+
+pub fn fmtPath(path: Self.Path) std.fmt.Formatter(struct {
+  fn format(
+    self: Self.Path, 
+    comptime _: []const u8,
+    _: std.fmt.FormatOptions,
+    writer: anytype,
+  ) !void {
+    for (self.items, 0..) |name, i| {
+      if (i != 0) try writer.writeByte('.');
+      switch (name) {
+        .str => |str| try writer.writeAll(str),
+        .num => |num| try writer.print("{}", .{num}),
+      }
+    }
+  }
+}.format) {
+  return .{.data = path};
 }
