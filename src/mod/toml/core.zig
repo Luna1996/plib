@@ -30,7 +30,7 @@ pub fn parse(comptime T: type, conf: Conf) !T {
     .input = conf.input,
     .keep_null = keep_null,
     .keeps = &.{
-      .toml, .expression,
+      .toml,
       .keyval, .std_table, .array_table,
       .key, .unquoted_key, .quoted_key,
       .string, .boolean, .array, .inline_table, .float, .integer, .date_time,

@@ -51,14 +51,10 @@ pub fn build(allocator: std.mem.Allocator, ast: *const Ast, error_info: ?ErrorIn
   if (asTag(ast.val) == .str) return root;
 
   var iter = ast.iterator();
-  while (iter.next()) |exp_ast| {
-    if (asTag(exp_ast.val) == .str) continue;
-    var exp_iter = exp_ast.iterator();
-    if (exp_iter.next()) |sub_ast| switch (sub_ast.tag.?) {
-      .keyval => try self.buildKeyVal(self.current_table, sub_ast),
-      else    => try self.changeCurrentTable(sub_ast),
-    };
-  }
+  while (iter.next()) |sub_ast| switch (sub_ast.tag.?) {
+    .keyval => try self.buildKeyVal(self.current_table, sub_ast),
+    else    => try self.changeCurrentTable(sub_ast),
+  };
 
   return root;
 }
