@@ -93,18 +93,26 @@ pub fn Ast(comptime Tag: type) type {
       options: std.fmt.FormatOptions,
       writer: anytype,
     ) !void {
-      if (fmt.len != 0 and self.tag == null) return;
-      const deep = options.width orelse 0;
-      if (deep > 0) try writer.writeByteNTimes(' ', deep * 2);
-      try writer.writeAll(if (self.tag) |tag| @tagName(tag) else "[null]");
-      switch (self.val) {
-        .str => |str| try writer.print(": \"{}\"\n", .{std.zig.fmtEscapes(str)}),
-        .sub => |sub| {
-          try writer.print("[{d}]\n", .{sub.items.len});
-          var opt = options;
-          opt.width = deep + 1;
-          for (sub.items) |item| try item.format(fmt, opt, writer);
-        },
+      if (std.mem.eql("f", fmt)) {
+        if (self.tag == null) {
+          try writer.writeAll(self.val.str);
+        } else for (self.val.sub.items) |*sub| {
+          try sub.format(fmt, options, writer);
+        }
+      } else {
+        if (self.tag == null) return;
+        const deep = options.width orelse 0;
+        if (deep > 0) try writer.writeByteNTimes(' ', deep * 2);
+        try writer.writeAll(if (self.tag) |tag| @tagName(tag) else "[null]");
+        switch (self.val) {
+          .str => |str| try writer.print(": \"{}\"\n", .{std.zig.fmtEscapes(str)}),
+          .sub => |sub| {
+            try writer.print("[{d}]\n", .{sub.items.len});
+            var opt = options;
+            opt.width = deep + 1;
+            for (sub.items) |item| try item.format(fmt, opt, writer);
+          },
+        }
       }
     }
   };
