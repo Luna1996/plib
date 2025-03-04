@@ -93,12 +93,9 @@ pub fn Ast(comptime Tag: type) type {
       options: std.fmt.FormatOptions,
       writer: anytype,
     ) !void {
-      if (std.mem.eql("f", fmt)) {
-        if (self.tag == null) {
-          try writer.writeAll(self.val.str);
-        } else for (self.val.sub.items) |*sub| {
-          try sub.format(fmt, options, writer);
-        }
+      if (std.mem.eql(u8, "f", fmt)) switch (self.val) {
+        .str => |str| try writer.writeAll(str),
+        .sub => |sub| for (sub.items) |*item| try item.format(fmt, options, writer),
       } else {
         if (self.tag == null) return;
         const deep = options.width orelse 0;

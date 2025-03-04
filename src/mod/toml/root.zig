@@ -36,12 +36,44 @@ test {
   std.debug.print("\n", .{});
   const allocator = std.testing.allocator;
   const file_text =
-    \\many.dots.here.dot.dot.dot = {a.b.c = 1, a.b.d = 2}
+    \\# Top comment.
+    \\  # Top comment.
+    \\# Top comment.
+    \\
+    \\# [no-extraneous-groups-please]
+    \\
+    \\[group] # Comment
+    \\answer = 42 # Comment
+    \\# no-extraneous-keys-please = 999
+    \\# Inbetween comment.
+    \\more = [ # Comment
+    \\  # What about multiple # comments?
+    \\  # Can you handle it?
+    \\  #
+    \\          # Evil.
+    \\# Evil.
+    \\  42, 42, # Comments within arrays are fun.
+    \\  # What about multiple # comments?
+    \\  # Can you handle it?
+    \\  #
+    \\          # Evil.
+    \\# Evil.
+    \\# ] Did I fool you?
+    \\] # Hopefully not.
+    \\
+    \\# Make sure the space between the datetime and "#" isn't lexed.
+    \\dt = 1979-05-27T07:32:12-07:00  # c
+    \\d = 1979-05-27 # Comment
+    \\
   ;
+  var edit = @import("formatter_edit.zig").init(allocator);
+  defer edit.deinit();
   var toml = try Toml.parse(Toml, .{
     .allocator = allocator,
     .input = file_text,
+    .edit_formatter = &edit,
   });
-  defer toml.deinit(allocator);
-  std.debug.print("{}", .{toml});
+  toml.table.getPtr("group").?.table.getPtr("answer").?.integer = 66;
+  try edit.setVal(toml);
+  std.debug.print("{}", .{&edit});
 }

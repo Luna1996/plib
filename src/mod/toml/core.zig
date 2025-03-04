@@ -7,7 +7,7 @@ const Array = Self.Array;
 const Table = Self.Table;
 const ast_to_toml = @import("ast_to_toml.zig");
 const toml_to_any = @import("toml_to_any.zig");
-const FullFormatter = @import("formatter_full.zig");
+const EditFormatter = @import("formatter_edit.zig");
 
 pub const Conf = struct {
   allocator: std.mem.Allocator,
@@ -20,11 +20,11 @@ pub const Conf = struct {
   error_unknown_key: bool = true,
   union_inference: bool = true,
 
-  full_formatter: ?*FullFormatter = null,
+  edit_formatter: ?*EditFormatter = null,
 };
 
 pub fn parse(comptime T: type, conf: Conf) !T {
-  const keep_null = conf.full_formatter != null;
+  const keep_null = conf.edit_formatter != null;
   var ast = try Parser.parse(.{
     .allocator = conf.allocator,
     .input = conf.input,
@@ -38,7 +38,7 @@ pub fn parse(comptime T: type, conf: Conf) !T {
     .file_path = conf.file_path,
     .log_error = conf.log_error,
   });
-  if (keep_null) conf.full_formatter.?.ast = ast;
+  if (keep_null) conf.edit_formatter.?.ast = ast;
   if (T == Ast) return ast;
   defer if (!keep_null) ast.deinit(conf.allocator);
   var toml = try ast_to_toml.build(conf.allocator, &ast, .{
