@@ -1,6 +1,7 @@
 .{
-  .name = "abnf",
-  .version = "0.1.0",
+  .name = .plib,
+  .version = "1.0.0",
+  .fingerprint = 0x1c359d5ef97d223e,
   .paths = .{
     "src",
     "build.zig",
