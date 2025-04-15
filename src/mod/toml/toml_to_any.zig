@@ -72,12 +72,17 @@ fn buildSlice(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {
   const V = info.child;
   const A = std.ArrayListAlignedUnmanaged(V, info.alignment);
   if (V == u8) {
-    if (T != []const u8 and T != []u8) @compileError("unsupported type: " ++ @typeName(T));
     if (asTag(toml) != .string) return error.TomlError;
-    return try conf.allocator.dupe(u8, toml.string);
+    return switch (T) {
+      []const u8, []u8 => try conf.allocator.dupe(u8, toml.string),
+      [:0]const u8, [:0]u8 => try conf.allocator.dupeZ(u8, toml.string),
+      else => @compileError("unsupported type: " ++ @typeName(T)),
+    };
   } else {
-    const list = try buildArray(conf, A, toml);
-    return list.items;
+    var list = try buildArray(conf, A, toml);
+    return if (info.sentinel()) |item|
+      try list.toOwnedSliceSentinel(conf.allocator, item)
+    else try list.toOwnedSlice(conf.allocator);
   }
 }
 

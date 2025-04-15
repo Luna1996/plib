@@ -32,7 +32,7 @@ pub const Toml = union(enum) {
   pub usingnamespace @import("json_to_toml.zig");
 };
 
-test {
+test "edit" {
   std.debug.print("\n", .{});
   const allocator = std.testing.allocator;
   const file_text =
@@ -76,4 +76,15 @@ test {
   toml.table.getPtr("group").?.table.getPtr("answer").?.integer = 66;
   try edit.setVal(toml);
   std.debug.print("{}", .{&edit});
+}
+
+test "sentinel" {
+  std.debug.print("\n", .{});
+  const allocator = std.testing.allocator;
+  var toml = try Toml.parse(std.StringHashMapUnmanaged([:0]const u8), .{
+    .allocator = allocator,
+    .input = "a = \"fuck\"",
+  });
+  defer Toml.deinitAny(toml, allocator);
+  std.debug.print("{s}\n", .{toml.get("a").?});
 }
