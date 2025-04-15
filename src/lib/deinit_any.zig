@@ -4,11 +4,11 @@ pub fn deinitAny(self: anytype, allocator: std.mem.Allocator) void {
   const T: type = @TypeOf(self);
   switch (@typeInfo(T)) {
     .pointer   => |info| switch (info.size) {
-      .One => {
+      .one => {
         deinitAny(self.*, allocator);
         allocator.destroy(self);
       },
-      .Slice => {
+      .slice => {
         if (comptime needDeinit(info.child))
           for (self) |item| deinitAny(item, allocator);
         allocator.free(self);

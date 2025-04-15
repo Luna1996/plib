@@ -21,8 +21,8 @@ pub fn build(conf: Conf, comptime T: type, toml: Toml) Toml.Error!T {
     .@"struct" => try buildStruct(conf, T, toml),
     .@"union"  => try buildUnion (conf, T, toml),
     .pointer   => |info| switch (info.size) {
-      .One     => try buildPtr   (conf, T, toml),
-      .Slice   => try buildSlice (conf, T, toml),
+      .one     => try buildPtr   (conf, T, toml),
+      .slice   => try buildSlice (conf, T, toml),
       else     => @compileError("unsupported type: " ++ @typeName(T)),
     },
     else       => @compileError("unsupported type: " ++ @typeName(T)),
